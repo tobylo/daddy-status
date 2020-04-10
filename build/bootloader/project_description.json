@@ -1,0 +1,18 @@
+{
+    "project_name":       "bootloader",
+    "project_path":       "/home/peep/esp-idf/components/bootloader/subproject",
+    "build_dir":          "/home/peep/src/daddy-status/build/bootloader",
+    "config_file":        "/home/peep/src/daddy-status/sdkconfig",
+    "config_defaults":    "",
+    "app_elf":            "bootloader.elf",
+    "app_bin":            "bootloader.bin",
+    "git_revision":       "v4.0-dirty",
+    "phy_data_partition": "",
+    "monitor_baud" : "115200",
+    "config_environment" : {
+        "COMPONENT_KCONFIGS" : "/home/peep/esp-idf/components/efuse/Kconfig;/home/peep/esp-idf/components/esp32/Kconfig;/home/peep/esp-idf/components/esp_common/Kconfig;/home/peep/esp-idf/components/log/Kconfig;/home/peep/esp-idf/components/spi_flash/Kconfig",
+        "COMPONENT_KCONFIGS_PROJBUILD" : "/home/peep/esp-idf/components/bootloader/Kconfig.projbuild;/home/peep/esp-idf/components/esptool_py/Kconfig.projbuild;/home/peep/esp-idf/components/partition_table/Kconfig.projbuild"
+    },
+    "build_components" : [ "bootloader", "bootloader_support", "efuse", "esp32", "esp_common", "esp_rom", "esptool_py", "log", "main", "micro-ecc", "partition_table", "soc", "spi_flash", "xtensa", "" ],
+    "build_component_paths" : [ "/home/peep/esp-idf/components/bootloader", "/home/peep/esp-idf/components/bootloader_support", "/home/peep/esp-idf/components/efuse", "/home/peep/esp-idf/components/esp32", "/home/peep/esp-idf/components/esp_common", "/home/peep/esp-idf/components/esp_rom", "/home/peep/esp-idf/components/esptool_py", "/home/peep/esp-idf/components/log", "/home/peep/esp-idf/components/bootloader/subproject/main", "/home/peep/esp-idf/components/bootloader/subproject/components/micro-ecc", "/home/peep/esp-idf/components/partition_table", "/home/peep/esp-idf/components/soc", "/home/peep/esp-idf/components/spi_flash", "/home/peep/esp-idf/components/xtensa", "" ]
+}

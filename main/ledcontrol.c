@@ -3,17 +3,20 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "led_strip/led_strip.h"
+#include "led_strip.h"
 #include "ledcontrol.h"
 
 static const char* TAG = "ledcontrol";
 
-bool init_leds()
+bool leds_init()
 {
     led_strip.access_semaphore = xSemaphoreCreateBinary();
     bool led_init_ok = led_strip_init(&led_strip);
-    printf("Led strip is %s\n", led_init_ok ? "OK" : "Not OK");
+    ESP_LOGI(TAG, "led trip initialisation: %s", led_init_ok ? "SUCCESSFUL" : "ERROR");
     assert(led_init_ok);
+
+    leds_clear();
+
     return led_init_ok;
 }
 
@@ -32,21 +35,21 @@ void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensity)
 {
     if (angle < 120)
     {
-        color->red = hsv_lookup[120 - angle]*intensity;
-        color->green = hsv_lookup[angle]*intensity;
+        color->red = hsv_lookup[120 - angle];
+        color->green = hsv_lookup[angle];
         color->blue = 0;
     }
     else if (angle < 240)
     {
         color->red = 0;
-        color->green = hsv_lookup[240 - angle]*intensity;
-        color->blue = hsv_lookup[angle - 120]*intensity;
+        color->green = hsv_lookup[240 - angle];
+        color->blue = hsv_lookup[angle - 120];
     }
     else
     {
-        color->red = hsv_lookup[angle - 240]*intensity;
+        color->red = hsv_lookup[angle - 240];
         color->green = 0;
-        color->blue = hsv_lookup[360 - angle]*intensity;
+        color->blue = hsv_lookup[360 - angle];
     }
 }
 
@@ -85,6 +88,13 @@ void leds_blink(struct led_color_t *color)
     }
 }
 
+void leds_rainbow_task(void *pvParameters)
+{
+    leds_rainbow();
+    ESP_LOGI(TAG, "Finish leds_rainbow");
+    vTaskDelete(NULL);
+}
+
 void leds_rainbow()
 {
     while(1)
@@ -92,12 +102,11 @@ void leds_rainbow()
         struct led_color_t color;
         for(int k = 0; k<360; k++)
         {
-            ESP_LOGI(TAG, "Running k: %d", k);
             hsv_angle_to_rgb(k, &color, 0.3);
             led_strip_set_pixel_color(&led_strip, 0, &color);
             led_strip_set_pixel_color(&led_strip, 1, &color);
             led_strip_show(&led_strip);
-            vTaskDelay(10 / portTICK_PERIOD_MS);
+            vTaskDelay(15 / portTICK_PERIOD_MS);
         }
     }    
 }

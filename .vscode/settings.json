@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "led_strip.h": "c",
+        "task.h": "c",
+        "freertos.h": "c"
+    }
+}

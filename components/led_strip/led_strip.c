@@ -15,12 +15,11 @@
     and the task will look at buffer 2 for refreshing the LEDs
     ------------------------------------------------------------------------- */
 
-#include "led_strip/led_strip.h"
+#include <string.h>
+#include "led_strip.h"
 #include "freertos/task.h"
 
-#include <string.h>
-
-#define LED_STRIP_TASK_SIZE             (512)
+#define LED_STRIP_TASK_SIZE             (768)
 #define LED_STRIP_TASK_PRIORITY         (configMAX_PRIORITIES - 1)
 
 #define LED_STRIP_REFRESH_PERIOD_MS     (30U) // TODO: add as parameter to led_strip_init

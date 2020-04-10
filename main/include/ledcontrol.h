@@ -1,5 +1,5 @@
 #include <stddef.h>
-#include "led_strip/led_strip.h"
+#include "led_strip.h"
 
 #define LED_STRIP_LENGTH 2U
 #define LED_STRIP_RMT_INTR_NUM 19U
@@ -22,7 +22,7 @@ static struct led_color_t LED_COLOR_RED = {
     .blue = 0
 };
 
-bool init_leds();
+bool leds_init();
 void leds_blink_random();
 void leds_rainbow();
 
@@ -30,3 +30,5 @@ void leds_blink(struct led_color_t *color);
 static inline void leds_blink_alert() { leds_blink(&LED_COLOR_RED); }
 
 void leds_clear();
+
+void leds_rainbow_task(void *pvParameters);
