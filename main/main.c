@@ -59,6 +59,8 @@ void app_main()
     wifi_init();
     wifi_wait_connected();
 
+    graph_client_init();
+
     xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
     xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);
 

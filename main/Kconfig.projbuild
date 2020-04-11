@@ -8,6 +8,16 @@ menu "Daddy Status"
                 GPIO number of data to LED array
     endmenu
 
+    menu "Azure AD"
+        config AAD_TENANT_ID
+            string "Tenant ID that the Graph API belongs to"
+            default "GUID"
+        
+        config AAD_CLIENT_ID
+            string "Client ID of the app with the permissions to fetch presence"
+            default "GUID"
+    endmenu
+
 endmenu
 
 menu "WiFi setup"
