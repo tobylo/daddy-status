@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_system.h"
 #include "esp_spi_flash.h"
 #include "esp_log.h"
@@ -24,11 +25,49 @@ esp_err_t nvs_init()
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGE(TAG, "no nvs pages or new version found, erasing flash");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK( ret );
     return ret;
+}
+
+esp_err_t queue_init()
+{
+    evt_queue = xQueueCreate(5, sizeof(uint8_t));
+    if(evt_queue != NULL) {
+        return ESP_OK;
+    } else {
+        return ESP_FAIL;
+    }
+}
+
+void presence_handler_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Retrieve task started..");
+    uint8_t presence;
+    for(;;) 
+    {
+        if(xQueueReceive(evt_queue, &presence, portMAX_DELAY)) 
+        {
+            ESP_LOGD(TAG, "received presence event");
+            if(presence == PRESENCE_AVAILABLE) {
+                ESP_LOGD(TAG, "daddy status: available");
+                leds_color(LED_COLOR_GREEN);
+                leds_apply(false);
+            } else if(presence == PRESENCE_IN_CALL) {
+                ESP_LOGD(TAG, "daddy status: in a call");
+                led_color(0, LED_COLOR_YELLOW);
+                led_color(1, LED_COLOR_OFF);
+                leds_apply(false);
+            } else { //if(presence == PRESENCE_IN_VIDEO_CALL)
+                ESP_LOGD(TAG, "daddy status: in a video call");
+                leds_color(LED_COLOR_RED);
+                leds_apply(true);
+            }
+        }
+    }
 }
 
 esp_err_t pm_init()
@@ -59,11 +98,14 @@ void app_main()
 
     wifi_init();
     wifi_wait_connected();
+    
+    queue_init();
 
-    graph_client_init();
+    graph_client_init(&evt_queue);
+    xTaskCreate(&presence_handler_task, "presence_handler_task", 8192, &evt_queue, 5, NULL);
 
     // xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
-    xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);
+    //xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);
 
     //leds_blink_random();
     //leds_rainbow();

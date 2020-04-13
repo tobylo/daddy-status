@@ -7,18 +7,10 @@
 #include "ledcontrol.h"
 
 static const char* TAG = "ledcontrol";
+static TaskHandle_t led_task_handle = NULL;
 
-bool leds_init()
-{
-    led_strip.access_semaphore = xSemaphoreCreateBinary();
-    bool led_init_ok = led_strip_init(&led_strip);
-    ESP_LOGI(TAG, "led trip initialisation: %s", led_init_ok ? "SUCCESSFUL" : "ERROR");
-    assert(led_init_ok);
-
-    leds_clear();
-
-    return led_init_ok;
-}
+static const int BLINK_INTERVAL = 500;
+static struct led_color_t DESIRED_COLORS[LED_STRIP_LENGTH];
 
 const uint8_t hsv_lookup[121] = {
     0, 2, 4, 6, 8, 11, 13, 15, 17, 19, 21, 23, 25, 28, 30, 32, 34, 36, 38, 40,
@@ -31,7 +23,7 @@ const uint8_t hsv_lookup[121] = {
     246, 249, 251, 253, 255
 };
 
-void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensity)
+static void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensity)
 {
     if (angle < 120)
     {
@@ -53,66 +45,94 @@ void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensity)
     }
 }
 
-void leds_blink_random()
+static void leds_rainbow_task(void *pvParameters)
 {
-    printf("inside leds_blink_random");
-    while (1)
-    {
-        for (int i = 0; i < LED_STRIP_LENGTH; i++)
-        {
-            struct led_color_t random = {
-                .red = esp_random() % 17,
-                .green = esp_random() % 17,
-                .blue = esp_random() % 17};
-            led_strip_set_pixel_color(&led_strip, i, &random);
-            printf("Led %d shows R:%d G:%d B:%d\n", i, random.red, random.green, random.blue);
-        }
-
-        led_strip_show(&led_strip);
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
-}
-
-void leds_blink(struct led_color_t *color)
-{
-    while(1)
-    {
-        for (int i = 0; i < LED_STRIP_LENGTH; i++)
-        {
-            led_strip_set_pixel_color(&led_strip, i, color);
-        }
-        led_strip_show(&led_strip);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        leds_clear();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-}
-
-void leds_rainbow_task(void *pvParameters)
-{
-    leds_rainbow();
-    ESP_LOGI(TAG, "Finish leds_rainbow");
-    vTaskDelete(NULL);
-}
-
-void leds_rainbow()
-{
-    while(1)
+    ESP_LOGD(TAG, "running rainbow leds");
+    for(;;)
     {
         struct led_color_t color;
         for(int k = 0; k<360; k++)
         {
             hsv_angle_to_rgb(k, &color, 0.3);
-            led_strip_set_pixel_color(&led_strip, 0, &color);
-            led_strip_set_pixel_color(&led_strip, 1, &color);
+            for (int i = 0; i < LED_STRIP_LENGTH; i++) {
+                led_strip_set_pixel_color(&led_strip, i, &color);
+            }
             led_strip_show(&led_strip);
             vTaskDelay(15 / portTICK_PERIOD_MS);
         }
-    }    
+    }   
+}
+
+static void leds_helper_stop()
+{
+    if(led_task_handle != NULL) {
+        vTaskDelete( led_task_handle );
+        led_task_handle = NULL;
+    }
+    led_strip_clear(&led_strip);
+}
+
+void leds_helper_blink_task(void *pvParameters)
+{
+    for(;;)
+    {
+        for (int i = 0; i < LED_STRIP_LENGTH; i++)
+        {
+            led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
+            ESP_LOGD(TAG, "led %d flashing R:%d G:%d B:%d\n", i, DESIRED_COLORS[i].red, DESIRED_COLORS[i].green, DESIRED_COLORS[i].blue);
+        }
+
+        led_strip_show(&led_strip);
+        vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
+        led_strip_clear(&led_strip);
+    }
 }
 
 void leds_clear()
 {
-    led_strip_clear(&led_strip);
+    leds_helper_stop();
     led_strip_show(&led_strip);
+}
+
+bool leds_init()
+{
+    led_strip.access_semaphore = xSemaphoreCreateBinary();
+    bool led_init_ok = led_strip_init(&led_strip);
+    ESP_LOGI(TAG, "led trip initialisation: %s", led_init_ok ? "SUCCESSFUL" : "ERROR");
+    assert(led_init_ok);
+
+    leds_clear();
+    xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
+
+    return led_init_ok;
+}
+
+void led_color(int led_index, struct led_color_t color)
+{
+    if(led_index >= LED_STRIP_LENGTH) {
+        ESP_LOGE(TAG, "tried to set led color for index %d, array only contains %d leds", led_index, LED_STRIP_LENGTH);
+        return;
+    }
+
+    DESIRED_COLORS[led_index] = color;
+    led_strip_set_pixel_color(&led_strip, led_index, &DESIRED_COLORS[led_index]);
+}
+
+void leds_color(struct led_color_t color)
+{
+    for (int i = 0; i < LED_STRIP_LENGTH; i++)
+    {
+        DESIRED_COLORS[i] = color;
+        led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
+    }
+}
+
+void leds_apply(bool flash)
+{
+    if(flash) {
+        leds_helper_stop();
+        xTaskCreate(&leds_helper_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
+    } else {
+        led_strip_show(&led_strip);
+    }
 }

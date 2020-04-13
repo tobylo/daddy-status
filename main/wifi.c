@@ -75,6 +75,7 @@ void wifi_init(void)
 
     ESP_LOGI(TAG, "esp_wifi_set_ps().");
     esp_wifi_set_ps(DEFAULT_PS_MODE);
+    //esp_wifi_set_ps(WIFI_PS_NONE);
 }
 
 void wifi_wait_connected()
