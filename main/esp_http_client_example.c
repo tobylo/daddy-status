@@ -16,10 +16,9 @@
 #include "nvs_flash.h"
 #include "esp_event.h"
 #include "tcpip_adapter.h"
-#include "protocol_examples_common.h"
 #include "esp_tls.h"
-
 #include "esp_http_client.h"
+#include "http_client.h"
 
 #define MAX_HTTP_RECV_BUFFER 512
 static const char *TAG = "HTTP_CLIENT";
@@ -37,7 +36,7 @@ static const char *TAG = "HTTP_CLIENT";
 extern const char howsmyssl_com_root_cert_pem_start[] asm("_binary_howsmyssl_com_root_cert_pem_start");
 extern const char howsmyssl_com_root_cert_pem_end[]   asm("_binary_howsmyssl_com_root_cert_pem_end");
 
-esp_err_t _http_event_handler(esp_http_client_event_t *evt)
+esp_err_t _http_test_event_handler(esp_http_client_event_t *evt)
 {
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
@@ -80,7 +79,7 @@ static void http_rest_with_url()
 {
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/get",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -166,7 +165,7 @@ static void http_rest_with_hostname_path()
         .host = "httpbin.org",
         .path = "/get",
         .transport_type = HTTP_TRANSPORT_OVER_TCP,
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -251,7 +250,7 @@ static void http_auth_basic()
 {
     esp_http_client_config_t config = {
         .url = "http://user:passwd@httpbin.org/basic-auth/user/passwd",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
         .auth_type = HTTP_AUTH_TYPE_BASIC,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -271,7 +270,7 @@ static void http_auth_basic_redirect()
 {
     esp_http_client_config_t config = {
         .url = "http://user:passwd@httpbin.org/basic-auth/user/passwd",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -290,7 +289,7 @@ static void http_auth_digest()
 {
     esp_http_client_config_t config = {
         .url = "http://user:passwd@httpbin.org/digest-auth/auth/user/passwd/MD5/never",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -309,7 +308,7 @@ static void https_with_url()
 {
     esp_http_client_config_t config = {
         .url = "https://www.howsmyssl.com",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
         .cert_pem = howsmyssl_com_root_cert_pem_start,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -331,7 +330,7 @@ static void https_with_hostname_path()
         .host = "www.howsmyssl.com",
         .path = "/",
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
         .cert_pem = howsmyssl_com_root_cert_pem_start,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -351,7 +350,7 @@ static void http_relative_redirect()
 {
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/relative-redirect/3",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -370,7 +369,7 @@ static void http_absolute_redirect()
 {
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/absolute-redirect/3",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -389,7 +388,7 @@ static void http_redirect_to_https()
 {
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/redirect-to?url=https%3A%2F%2Fwww.howsmyssl.com",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -409,7 +408,7 @@ static void http_download_chunk()
 {
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/stream-bytes/8912",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -433,7 +432,7 @@ static void http_perform_as_stream_reader()
     }
     esp_http_client_config_t config = {
         .url = "http://httpbin.org/get",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err;
@@ -464,7 +463,7 @@ static void https_async()
 {
     esp_http_client_config_t config = {
         .url = "https://postman-echo.com/post",
-        .event_handler = _http_event_handler,
+        .event_handler = _http_test_event_handler,
         .is_async = true,
         .timeout_ms = 5000,
     };
@@ -496,7 +495,7 @@ static void https_with_invalid_url()
 {
     esp_http_client_config_t config = {
             .url = "https://not.existent.url",
-            .event_handler = _http_event_handler,
+            .event_handler = _http_test_event_handler,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_err_t err = esp_http_client_perform(client);
@@ -512,7 +511,7 @@ static void https_with_invalid_url()
 }
 
 
-static void http_test_task(void *pvParameters)
+void http_test_task(void *pvParameters)
 {
     http_rest_with_url();
     http_rest_with_hostname_path();
@@ -531,25 +530,4 @@ static void http_test_task(void *pvParameters)
 
     ESP_LOGI(TAG, "Finish http example");
     vTaskDelete(NULL);
-}
-
-void app_main()
-{
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    ESP_ERROR_CHECK(example_connect());
-    ESP_LOGI(TAG, "Connected to AP, begin http example");
-
-    xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
 }

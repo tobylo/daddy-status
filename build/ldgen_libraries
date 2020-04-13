@@ -57,3 +57,4 @@
 /home/peep/src/daddy-status/build/esp-idf/wifi_provisioning/libwifi_provisioning.a
 /home/peep/src/daddy-status/build/esp-idf/main/libmain.a
 /home/peep/src/daddy-status/build/esp-idf/led_strip/libled_strip.a
+/home/peep/src/daddy-status/build/esp-idf/uri_encode/liburi_encode.a

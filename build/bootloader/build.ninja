@@ -149,13 +149,13 @@ build app: phony CMakeFiles/app gen_project_binary
 # Custom command for CMakeFiles/size-components
 
 build CMakeFiles/size-components: CUSTOM_COMMAND bootloader.elf || _project_elf_src bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/tools/idf_size.py --archives /home/peep/src/daddy-status/build/bootloader/bootloader.map
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/tools/idf_size.py --archives /home/peep/src/daddy-status/build/bootloader/bootloader.map
 
 #############################################
 # Custom command for CMakeFiles/size
 
 build CMakeFiles/size: CUSTOM_COMMAND bootloader.elf || _project_elf_src bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/tools/idf_size.py /home/peep/src/daddy-status/build/bootloader/bootloader.map
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/tools/idf_size.py /home/peep/src/daddy-status/build/bootloader/bootloader.map
 
 #############################################
 # Phony custom command for CMakeFiles/_project_elf_src
@@ -174,7 +174,7 @@ build project_elf_src.c: CUSTOM_COMMAND
 # Custom command for CMakeFiles/flash
 
 build CMakeFiles/flash: CUSTOM_COMMAND /home/peep/esp-idf/components/bootloader/subproject/partition_table /home/peep/esp-idf/components/bootloader/subproject/bootloader || _project_elf_src app bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a gen_project_binary
-  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="/usr/bin/python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="write_flash @flash_project_args" -D WORKING_DIRECTORY="/home/peep/src/daddy-status/build/bootloader" -P run_esptool.cmake
+  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="write_flash @flash_project_args" -D WORKING_DIRECTORY="/home/peep/src/daddy-status/build/bootloader" -P run_esptool.cmake
   pool = console
 
 #############################################
@@ -248,7 +248,7 @@ build mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-configure: CUSTOM_COMMAND m
 #############################################
 # Custom command for mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-build
 
-build mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-build kconfig_bin/mconf-idf: CUSTOM_COMMAND mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-configure /home/peep/esp-idf/tools/kconfig/conf.c /home/peep/esp-idf/tools/kconfig/confdata.c /home/peep/esp-idf/tools/kconfig/expand_env.c /home/peep/esp-idf/tools/kconfig/expr.c /home/peep/esp-idf/tools/kconfig/gconf.c /home/peep/esp-idf/tools/kconfig/images.c /home/peep/esp-idf/tools/kconfig/kxgettext.c /home/peep/esp-idf/tools/kconfig/mconf.c /home/peep/esp-idf/tools/kconfig/menu.c /home/peep/esp-idf/tools/kconfig/nconf.c /home/peep/esp-idf/tools/kconfig/nconf.gui.c /home/peep/esp-idf/tools/kconfig/symbol.c /home/peep/esp-idf/tools/kconfig/util.c /home/peep/esp-idf/tools/kconfig/Makefile /home/peep/esp-idf/tools/cmake/idf.cmake
+build mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-build kconfig_bin/mconf-idf: CUSTOM_COMMAND mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-configure /home/peep/esp-idf/tools/kconfig/conf.c /home/peep/esp-idf/tools/kconfig/confdata.c /home/peep/esp-idf/tools/kconfig/expand_env.c /home/peep/esp-idf/tools/kconfig/expr.c /home/peep/esp-idf/tools/kconfig/gconf.c /home/peep/esp-idf/tools/kconfig/images.c /home/peep/esp-idf/tools/kconfig/kxgettext.c /home/peep/esp-idf/tools/kconfig/mconf.c /home/peep/esp-idf/tools/kconfig/menu.c /home/peep/esp-idf/tools/kconfig/nconf.c /home/peep/esp-idf/tools/kconfig/nconf.gui.c /home/peep/esp-idf/tools/kconfig/symbol.c /home/peep/esp-idf/tools/kconfig/util.c /home/peep/esp-idf/tools/kconfig/zconf.tab.c /home/peep/esp-idf/tools/kconfig/Makefile /home/peep/esp-idf/tools/cmake/idf.cmake
   COMMAND = cd /home/peep/src/daddy-status/build/bootloader/kconfig_bin && rm -f /home/peep/esp-idf/tools/kconfig/zconf.lex.c /home/peep/esp-idf/tools/kconfig/zconf.hash.c && make -f /home/peep/esp-idf/tools/kconfig/Makefile mconf-idf && /usr/bin/cmake -E touch /home/peep/src/daddy-status/build/bootloader/mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-build
   DESC = Performing build step for 'mconf-idf'
   restat = 1
@@ -257,21 +257,21 @@ build mconf-idf-prefix/src/mconf-idf-stamp/mconf-idf-build kconfig_bin/mconf-idf
 # Custom command for CMakeFiles/app-flash
 
 build CMakeFiles/app-flash: CUSTOM_COMMAND || _project_elf_src app bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a gen_project_binary
-  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="/usr/bin/python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="write_flash @flash_app_args" -D WORKING_DIRECTORY="/home/peep/src/daddy-status/build/bootloader" -P run_esptool.cmake
+  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="write_flash @flash_app_args" -D WORKING_DIRECTORY="/home/peep/src/daddy-status/build/bootloader" -P run_esptool.cmake
   pool = console
 
 #############################################
 # Custom command for CMakeFiles/confserver
 
 build CMakeFiles/confserver: CUSTOM_COMMAND
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/tools/kconfig_new/confserver.py --env-file /home/peep/src/daddy-status/build/bootloader/config.env --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/tools/kconfig_new/confserver.py --env-file /home/peep/src/daddy-status/build/bootloader/config.env --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig
   pool = console
 
 #############################################
 # Custom command for CMakeFiles/menuconfig
 
 build CMakeFiles/menuconfig: CUSTOM_COMMAND || mconf-idf
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/tools/kconfig_new/confgen.py --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig --env-file /home/peep/src/daddy-status/build/bootloader/config.env --env IDF_TARGET=esp32 --dont-write-deprecated --output config /home/peep/src/daddy-status/sdkconfig && /usr/bin/cmake -E env COMPONENT_KCONFIGS=/home/peep/esp-idf/components/efuse/Kconfig\ /home/peep/esp-idf/components/esp32/Kconfig\ /home/peep/esp-idf/components/esp_common/Kconfig\ /home/peep/esp-idf/components/log/Kconfig\ /home/peep/esp-idf/components/spi_flash/Kconfig COMPONENT_KCONFIGS_PROJBUILD=/home/peep/esp-idf/components/bootloader/Kconfig.projbuild\ /home/peep/esp-idf/components/esptool_py/Kconfig.projbuild\ /home/peep/esp-idf/components/partition_table/Kconfig.projbuild IDF_CMAKE=y KCONFIG_CONFIG=/home/peep/src/daddy-status/sdkconfig IDF_TARGET=esp32 /home/peep/src/daddy-status/build/bootloader/kconfig_bin/mconf-idf /home/peep/esp-idf/Kconfig && /usr/bin/python /home/peep/esp-idf/tools/kconfig_new/confgen.py --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig --env-file /home/peep/src/daddy-status/build/bootloader/config.env --env IDF_TARGET=esp32 --output config /home/peep/src/daddy-status/sdkconfig
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/tools/kconfig_new/confgen.py --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig --env-file /home/peep/src/daddy-status/build/bootloader/config.env --env IDF_TARGET=esp32 --dont-write-deprecated --output config /home/peep/src/daddy-status/sdkconfig && /usr/bin/cmake -E env COMPONENT_KCONFIGS=/home/peep/esp-idf/components/efuse/Kconfig\ /home/peep/esp-idf/components/esp32/Kconfig\ /home/peep/esp-idf/components/esp_common/Kconfig\ /home/peep/esp-idf/components/log/Kconfig\ /home/peep/esp-idf/components/spi_flash/Kconfig COMPONENT_KCONFIGS_PROJBUILD=/home/peep/esp-idf/components/bootloader/Kconfig.projbuild\ /home/peep/esp-idf/components/esptool_py/Kconfig.projbuild\ /home/peep/esp-idf/components/partition_table/Kconfig.projbuild IDF_CMAKE=y KCONFIG_CONFIG=/home/peep/src/daddy-status/sdkconfig IDF_TARGET=esp32 /home/peep/src/daddy-status/build/bootloader/kconfig_bin/mconf-idf /home/peep/esp-idf/Kconfig && python /home/peep/esp-idf/tools/kconfig_new/confgen.py --kconfig /home/peep/esp-idf/Kconfig --sdkconfig-rename /home/peep/esp-idf/sdkconfig.rename --config /home/peep/src/daddy-status/sdkconfig --env-file /home/peep/src/daddy-status/build/bootloader/config.env --env IDF_TARGET=esp32 --output config /home/peep/src/daddy-status/sdkconfig
   pool = console
 
 #############################################
@@ -283,7 +283,7 @@ build CMakeFiles/gen_project_binary: phony .bin_timestamp || _project_elf_src bo
 # Custom command for .bin_timestamp
 
 build .bin_timestamp: CUSTOM_COMMAND bootloader.elf || _project_elf_src bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 elf2image --flash_mode dio --flash_freq 20m --flash_size 4MB --min-rev 1 -o /home/peep/src/daddy-status/build/bootloader/bootloader.bin bootloader.elf && /usr/bin/cmake -E echo "Generated /home/peep/src/daddy-status/build/bootloader/bootloader.bin" && /usr/bin/cmake -E md5sum /home/peep/src/daddy-status/build/bootloader/bootloader.bin > /home/peep/src/daddy-status/build/bootloader/.bin_timestamp
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 elf2image --flash_mode dio --flash_freq 20m --flash_size 4MB --min-rev 1 -o /home/peep/src/daddy-status/build/bootloader/bootloader.bin bootloader.elf && /usr/bin/cmake -E echo "Generated /home/peep/src/daddy-status/build/bootloader/bootloader.bin" && /usr/bin/cmake -E md5sum /home/peep/src/daddy-status/build/bootloader/bootloader.bin > /home/peep/src/daddy-status/build/bootloader/.bin_timestamp
   DESC = Generating binary image from built executable
   restat = 1
 
@@ -291,14 +291,14 @@ build .bin_timestamp: CUSTOM_COMMAND bootloader.elf || _project_elf_src bootload
 # Custom command for CMakeFiles/erase_flash
 
 build CMakeFiles/erase_flash: CUSTOM_COMMAND
-  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="/usr/bin/python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="erase_flash" -P run_esptool.cmake
+  COMMAND = cd /home/peep/esp-idf/components/esptool_py && /usr/bin/cmake -D IDF_PATH="/home/peep/esp-idf" -D ESPTOOLPY="python /home/peep/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32" -D ESPTOOL_ARGS="erase_flash" -P run_esptool.cmake
   pool = console
 
 #############################################
 # Custom command for CMakeFiles/size-files
 
 build CMakeFiles/size-files: CUSTOM_COMMAND bootloader.elf || _project_elf_src bootloader.elf esp-idf/bootloader_support/libbootloader_support.a esp-idf/efuse/libefuse.a esp-idf/log/liblog.a esp-idf/main/libmain.a esp-idf/micro-ecc/libmicro-ecc.a esp-idf/soc/libsoc.a esp-idf/spi_flash/libspi_flash.a esp-idf/xtensa/libxtensa.a
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && /usr/bin/python /home/peep/esp-idf/tools/idf_size.py --files /home/peep/src/daddy-status/build/bootloader/bootloader.map
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader && python /home/peep/esp-idf/tools/idf_size.py --files /home/peep/src/daddy-status/build/bootloader/bootloader.map
 
 #############################################
 # Phony custom command for CMakeFiles/app
@@ -959,19 +959,19 @@ build esp-idf/efuse/edit_cache: phony esp-idf/efuse/CMakeFiles/edit_cache.util
 # Custom command for esp-idf/efuse/CMakeFiles/efuse_common_table
 
 build esp-idf/efuse/CMakeFiles/efuse_common_table: CUSTOM_COMMAND
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && /usr/bin/python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/esp32/esp_efuse_table.csv --max_blk_len 192
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/esp32/esp_efuse_table.csv --max_blk_len 192
 
 #############################################
 # Custom command for esp-idf/efuse/CMakeFiles/show_efuse_table
 
 build esp-idf/efuse/CMakeFiles/show_efuse_table: CUSTOM_COMMAND
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && /usr/bin/python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/esp32/esp_efuse_table.csv --max_blk_len 192 --info
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/esp32/esp_efuse_table.csv --max_blk_len 192 --info
 
 #############################################
 # Custom command for esp-idf/efuse/CMakeFiles/efuse_test_table
 
 build esp-idf/efuse/CMakeFiles/efuse_test_table: CUSTOM_COMMAND
-  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && /usr/bin/python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/test/esp_efuse_test_table.csv --max_blk_len 192
+  COMMAND = cd /home/peep/src/daddy-status/build/bootloader/esp-idf/efuse && python /home/peep/esp-idf/components/efuse/efuse_table_gen.py /home/peep/esp-idf/components/efuse/test/esp_efuse_test_table.csv --max_blk_len 192
 # =============================================================================
 # Write statements declared in CMakeLists.txt:
 # /home/peep/esp-idf/CMakeLists.txt

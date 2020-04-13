@@ -6,6 +6,6 @@
 #include "esp_log.h"
 #include "esp_system.h"
 
-esp_err_t http_init();
+esp_err_t graph_client_init();
 
 #endif

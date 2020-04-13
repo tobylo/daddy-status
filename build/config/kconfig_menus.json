@@ -1306,6 +1306,34 @@
                 "id": "daddy-status-leds",
                 "title": "LEDs",
                 "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": null,
+                        "id": "AAD_TENANT_ID",
+                        "name": "AAD_TENANT_ID",
+                        "range": null,
+                        "title": "Tenant ID that the Graph API belongs to",
+                        "type": "string"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": null,
+                        "id": "AAD_CLIENT_ID",
+                        "name": "AAD_CLIENT_ID",
+                        "range": null,
+                        "title": "Client ID of the app with the permissions to fetch presence",
+                        "type": "string"
+                    }
+                ],
+                "depends_on": null,
+                "id": "daddy-status-azure-ad",
+                "title": "Azure AD",
+                "type": "menu"
             }
         ],
         "depends_on": null,
@@ -10894,7 +10922,7 @@
                         "id": "LWIP_TCPIP_TASK_STACK_SIZE",
                         "name": "LWIP_TCPIP_TASK_STACK_SIZE",
                         "range": [
-                            2048,
+                            2560,
                             65536
                         ],
                         "title": "TCP/IP Task Stack Size",

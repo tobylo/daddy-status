@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 #include "http_client.h"
 #include "wifi.h"
+#include "graph_client.h"
 
 #define ESP_INTR_FLAG_DEFAULT 0
 
@@ -61,7 +62,7 @@ void app_main()
 
     graph_client_init();
 
-    xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
+    // xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
     xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);
 
     //leds_blink_random();

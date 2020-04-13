@@ -3,28 +3,14 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": [{
-        "name": "OpenOCD Debug",
-        "type": "cppdbg",
-        "request": "launch",
-        "miDebuggerPath": "xtensa-esp32-elf-gdb",
-        "program": "${workspaceFolder}/build/daddy-status.elf",
-        "setupCommands": [{
-            "description": "enable pretty printing for gdb",
-            "text": "-enable-pretty-printing",
-            "ignoreFailures": true
-        }, {
-            "text": "file '${workspaceFolder}/build/daddy-status.elf'"
-        }, {
-            "text": "target remote :3333"
-        }, {
-            "text": "monitor program_esp32 ${workspaceFolder}/build/daddy-status 0x10000 verify"
-        }, {
-            "text": "monitor reset halt"
-        }, {
-            "text": "thb app_main"
-        }],
-        "cwd": "${workspaceFolder}",
-        "externalConsole": true
-    }]
+    "configurations": [
+        {
+            "type": "espidf",
+            "name": "Launch",
+            "request": "launch",
+            "env": {
+                    "PYTHONPATH": "${command:espIdf.getExtensionPath}/esp_debug_adapter/debug_adapter"
+                },
+        }
+    ]
 }
