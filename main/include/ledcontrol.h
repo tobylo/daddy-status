@@ -52,13 +52,3 @@ void led_color(int led_number, struct led_color_t color);
 void leds_color(struct led_color_t color);
 
 void leds_apply(bool flash);
-
-//void leds_blink_random();
-//void leds_rainbow();
-
-//void leds_blink(struct led_color_t *color);
-//static inline void leds_blink_alert() { leds_blink(&LED_COLOR_RED); }
-
-//void leds_clear();
-
-//void leds_rainbow_task(void *pvParameters);

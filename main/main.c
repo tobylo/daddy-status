@@ -7,11 +7,7 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "ledcontrol.h"
-#include "gpio.h"
-#include "interrupt.h"
-#include "timer.h"
 #include "nvs_flash.h"
-#include "http_client.h"
 #include "wifi.h"
 #include "graph_client.h"
 
@@ -106,20 +102,5 @@ void app_main()
     graph_client_init(&evt_queue);
     xTaskCreate(presence_handler_task, "presence_handler_task", 8192, &evt_queue, 5, NULL);
 
-    // xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
-    //xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);
-
-    //leds_blink_random();
-    //leds_rainbow();
-    //leds_blink_alert();
-
     ESP_LOGI(TAG, "All initialized");
-    
-    /*
-    while(1)
-    {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        gps_retrieve();
-    }
-    */
 }
