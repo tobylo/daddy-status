@@ -35,7 +35,7 @@ esp_err_t nvs_init()
 
 esp_err_t queue_init()
 {
-    evt_queue = xQueueCreate(5, sizeof(uint8_t));
+    evt_queue = xQueueCreate(1, sizeof(uint32_t));
     if(evt_queue != NULL) {
         return ESP_OK;
     } else {
@@ -45,24 +45,26 @@ esp_err_t queue_init()
 
 void presence_handler_task(void *pvParameters)
 {
+    QueueHandle_t *queue = pvParameters;
+
     ESP_LOGI(TAG, "Retrieve task started..");
-    uint8_t presence;
+    unsigned int presence;
     for(;;) 
     {
-        if(xQueueReceive(evt_queue, &presence, portMAX_DELAY)) 
+        if(xQueueReceive(*queue, &presence, portMAX_DELAY)) 
         {
             ESP_LOGD(TAG, "received presence event");
             if(presence == PRESENCE_AVAILABLE) {
                 ESP_LOGD(TAG, "daddy status: available");
                 leds_color(LED_COLOR_GREEN);
                 leds_apply(false);
-            } else if(presence == PRESENCE_IN_CALL) {
-                ESP_LOGD(TAG, "daddy status: in a call");
+            } else if(presence == PRESENCE_BUSY) {
+                ESP_LOGD(TAG, "daddy status: busy");
                 led_color(0, LED_COLOR_YELLOW);
                 led_color(1, LED_COLOR_OFF);
                 leds_apply(false);
-            } else { //if(presence == PRESENCE_IN_VIDEO_CALL)
-                ESP_LOGD(TAG, "daddy status: in a video call");
+            } else { //if(presence == PRESENCE_DO_NOT_DISTURB)
+                ESP_LOGD(TAG, "daddy status: DND");
                 leds_color(LED_COLOR_RED);
                 leds_apply(true);
             }
@@ -102,7 +104,7 @@ void app_main()
     queue_init();
 
     graph_client_init(&evt_queue);
-    xTaskCreate(&presence_handler_task, "presence_handler_task", 8192, &evt_queue, 5, NULL);
+    xTaskCreate(presence_handler_task, "presence_handler_task", 8192, &evt_queue, 5, NULL);
 
     // xTaskCreate(&http_test_task, "http_test_task", 8192, NULL, 5, NULL);
     //xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 8192, NULL, 5, NULL);

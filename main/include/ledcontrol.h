@@ -42,7 +42,7 @@ static struct led_color_t LED_COLOR_RED = {
 
 static struct led_color_t LED_COLOR_GREEN = {
     .red = 0,
-    .green = 180,
+    .green = 140,
     .blue = 0
 };
 

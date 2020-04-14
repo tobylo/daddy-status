@@ -15,6 +15,7 @@
 #include "cJSON.h"
 #include "wifi.h"
 #include "uri_encode.h"
+#include "switchs.h"
 
 #define MAX_HTTP_RECV_BUFFER 4096
 #define MAX_HTTP_TX_BUFFER 2048
@@ -387,7 +388,8 @@ static void graph_client_set_bearer_token()
 
     switch (err) {
         case ESP_OK:
-            ESP_LOGI(TAG, "persisted authorization header found: %s", authorization_header);
+            ESP_LOGI(TAG, "persisted authorization header found");
+            ESP_LOGD(TAG, "header value: %s", authorization_header);
             break;
         case ESP_ERR_NVS_NOT_FOUND:
             ESP_LOGE(TAG, "value is not initialized, authorization header not set.");
@@ -428,8 +430,10 @@ static esp_err_t init_graph_client()
     return ESP_OK;
 }
 
-void poll_presence_task(QueueHandle_t *evtQueueHandle)
+void poll_presence_task(void *pvParameters)
 {
+    QueueHandle_t *evtQueueHandle = pvParameters;
+
     esp_err_t err;
     while((err = init_graph_client()) != ESP_OK) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -438,7 +442,7 @@ void poll_presence_task(QueueHandle_t *evtQueueHandle)
     for(;;)
     {
         wifi_wait_connected();
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(3750 / portTICK_PERIOD_MS);
 
         while((err = esp_http_client_perform(GRAPH_CLIENT)) == ESP_ERR_HTTP_EAGAIN)
         {
@@ -491,18 +495,36 @@ void poll_presence_task(QueueHandle_t *evtQueueHandle)
         char *presence_activity = cJSON_GetObjectItem(root,"activity")->valuestring;
         ESP_LOGI(TAG, "presence: %s", presence_activity);
 
-        uint8_t presence;
-        //evt = malloc(sizeof(teams_presence_event_t));
-        if (strcmp(presence_activity, "InACall") == 0 ||
-            strcmp(presence_activity, "InAConferenceCall") == 0 ||
-            strcmp(presence_activity, "InAMeeting") == 0) {
-                presence = PRESENCE_IN_CALL;
-        } else if(strcmp(presence_activity, "Presenting") == 0) {
-            presence = PRESENCE_IN_VIDEO_CALL;
-        } else {
-            presence = PRESENCE_AVAILABLE;
-        }
-        xQueueSendFromISR(evtQueueHandle, (void*) &presence, NULL);
+        unsigned int presence;
+        
+        switchs (presence_activity)
+        {
+            cases ("Available")
+            cases ("AvailableIdle")
+            cases ("Offline")
+            cases ("OffWork")
+            cases ("OutOfOffice")
+            cases ("Away")
+            cases ("BeRightBack")
+            cases ("Inactive")
+            cases ("PresenceUnknown")
+                presence = PRESENCE_AVAILABLE;
+                break;
+            cases ("Busy")
+            cases ("BusyIdle")
+                presence = PRESENCE_BUSY;
+                break;
+            cases ("DoNotDisturb")
+            cases ("InACall")
+            cases ("InAConferenceCall")
+            cases ("InAMeeting")
+            cases ("Presenting")
+            cases ("UrgentInterruptionsOnly")
+                presence = PRESENCE_DO_NOT_DISTURB;
+                break;
+        } switchs_end
+
+        xQueueOverwrite(*evtQueueHandle, (void*) &presence);
 
         cJSON_Delete(root);
         free(buffer);
@@ -547,6 +569,6 @@ esp_err_t graph_client_init(QueueHandle_t *evtQueueHandle)
 {
     ESP_LOGI(TAG, "initializing...");
     refresh_token();
-    xTaskCreate(&poll_presence_task, "poll_presence_task", 15375, evtQueueHandle, 5, NULL);
+    xTaskCreate(poll_presence_task, "poll_presence_task", 15375, evtQueueHandle, 5, NULL);
     return ESP_OK;
 }

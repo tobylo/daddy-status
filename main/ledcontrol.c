@@ -9,7 +9,7 @@
 static const char* TAG = "ledcontrol";
 static TaskHandle_t led_task_handle = NULL;
 
-static const int BLINK_INTERVAL = 500;
+static const int BLINK_INTERVAL = 750;
 static struct led_color_t DESIRED_COLORS[LED_STRIP_LENGTH];
 
 const uint8_t hsv_lookup[121] = {
@@ -68,8 +68,8 @@ static void leds_helper_stop()
     if(led_task_handle != NULL) {
         vTaskDelete( led_task_handle );
         led_task_handle = NULL;
+        led_strip_clear(&led_strip);
     }
-    led_strip_clear(&led_strip);
 }
 
 void leds_helper_blink_task(void *pvParameters)
@@ -81,10 +81,12 @@ void leds_helper_blink_task(void *pvParameters)
             led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
             ESP_LOGD(TAG, "led %d flashing R:%d G:%d B:%d\n", i, DESIRED_COLORS[i].red, DESIRED_COLORS[i].green, DESIRED_COLORS[i].blue);
         }
-
         led_strip_show(&led_strip);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
+        
         led_strip_clear(&led_strip);
+        led_strip_show(&led_strip);
+        vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
     }
 }
 
@@ -102,13 +104,14 @@ bool leds_init()
     assert(led_init_ok);
 
     leds_clear();
-    xTaskCreate(&leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
+    xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
 
     return led_init_ok;
 }
 
 void led_color(int led_index, struct led_color_t color)
 {
+    leds_helper_stop();
     if(led_index >= LED_STRIP_LENGTH) {
         ESP_LOGE(TAG, "tried to set led color for index %d, array only contains %d leds", led_index, LED_STRIP_LENGTH);
         return;
@@ -120,6 +123,7 @@ void led_color(int led_index, struct led_color_t color)
 
 void leds_color(struct led_color_t color)
 {
+    leds_helper_stop();
     for (int i = 0; i < LED_STRIP_LENGTH; i++)
     {
         DESIRED_COLORS[i] = color;
@@ -130,7 +134,6 @@ void leds_color(struct led_color_t color)
 void leds_apply(bool flash)
 {
     if(flash) {
-        leds_helper_stop();
         xTaskCreate(&leds_helper_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
     } else {
         led_strip_show(&led_strip);

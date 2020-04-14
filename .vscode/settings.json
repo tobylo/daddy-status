@@ -9,6 +9,16 @@
   },
   "C_Cpp.intelliSenseEngineFallback": "Enabled",
   "files.associations": {
-    "string": "c"
+    "string": "c",
+    "optional": "cpp",
+    "istream": "cpp",
+    "ostream": "cpp",
+    "ratio": "cpp",
+    "system_error": "cpp",
+    "array": "cpp",
+    "functional": "cpp",
+    "tuple": "cpp",
+    "type_traits": "cpp",
+    "utility": "cpp"
   }
 }
