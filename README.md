@@ -7,6 +7,9 @@ Hardware required:
 - ESP32
 - two WS2812 RGBs
 
+## Demo
+[![demo](https://img.youtube.com/vi/txYKa6VPBUU/0.jpg)](https://www.youtube.com/watch?v=txYKa6VPBUU)
+
 ## TODO
 - write how-to
 
