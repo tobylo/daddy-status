@@ -226,7 +226,6 @@ static esp_err_t init_aad_auth_flow()
 
 static esp_err_t fetch_token(char *refresh_token)
 {
-    wifi_wait_connected();
     esp_err_t err = ESP_OK;
 
     // set correct path
@@ -269,6 +268,7 @@ static esp_err_t fetch_token(char *refresh_token)
         ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_set_post_field: complete");
 
         ESP_LOGD(AUTH_CLIENT_TAG, "executing method call...");
+        wifi_wait_connected();
         if((err = esp_http_client_perform(AUTH_CLIENT)) == ESP_ERR_HTTP_EAGAIN)
         {
             ESP_LOGI(AUTH_CLIENT_TAG, "perform return ESP_ERR_HTTP_EAGAIN, retrying again..");
@@ -466,7 +466,7 @@ void poll_presence_task(void *pvParameters)
         if(status_code == 401 || status_code == 403)
         {
             ESP_LOGI(GRAPH_CLIENT_TAG, "received status code %d, refreshing access token to see if possible.", status_code);
-            ESP_ERROR_CHECK(refresh_access_token());
+            ESP_ERROR_CHECK(refresh_token());
             graph_client_set_bearer_token();
             continue;
         }
@@ -537,11 +537,13 @@ void poll_presence_task(void *pvParameters)
     }
 }
 
-static esp_err_t refresh_token()
+esp_err_t refresh_token()
 {
     esp_err_t err;
-    while((err = init_auth_client()) != ESP_OK) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    if(AUTH_CLIENT == NULL) {
+        while((err = init_auth_client()) != ESP_OK) {
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
     }
     
     // try to refresh using existing token
@@ -558,15 +560,9 @@ static esp_err_t refresh_token()
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
-   
-    // TODO: Poll for new token when user has accepted
-
-    // TODO: Store access token and refresh token in spiffy
-
-    // TODO: Set timer and callback to fetch new access token and store the new refresh
-
-    // esp_http_client_close(AUTH_CLIENT);
-    // esp_http_client_cleanup(AUTH_CLIENT);
+    esp_http_client_close(AUTH_CLIENT);
+    esp_http_client_cleanup(AUTH_CLIENT);
+    AUTH_CLIENT = NULL;
 
     return ESP_OK;
 }
