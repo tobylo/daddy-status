@@ -59,6 +59,9 @@ void presence_handler_task(void *pvParameters)
                 led_color(0, LED_COLOR_YELLOW);
                 led_color(1, LED_COLOR_OFF);
                 leds_apply(false);
+            } else if(presence == PRESENCE_OFF_WORK) {
+                ESP_LOGD(TAG, "Daddy status: play time");
+                leds_rainbow();
             } else { //if(presence == PRESENCE_DO_NOT_DISTURB)
                 ESP_LOGD(TAG, "daddy status: DND");
                 leds_color(LED_COLOR_RED);
@@ -68,31 +71,11 @@ void presence_handler_task(void *pvParameters)
     }
 }
 
-esp_err_t pm_init()
-{
-#if CONFIG_PM_ENABLE
-    // Configure dynamic frequency scaling:
-    // maximum and minimum frequencies are set in sdkconfig,
-    // automatic light sleep is enabled if tickless idle support is enabled.
-    esp_pm_config_esp32_t pm_config = {
-            .max_freq_mhz = CONFIG_EXAMPLE_MAX_CPU_FREQ_MHZ,
-            .min_freq_mhz = CONFIG_EXAMPLE_MIN_CPU_FREQ_MHZ,
-#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
-            .light_sleep_enable = true
-#endif
-    };
-    return ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
-#endif // CONFIG_PM_ENABLE
-    
-    return ESP_OK;
-}
-
 void app_main()
 {
     leds_init();
 
     nvs_init();
-    pm_init();
 
     wifi_init();
     wifi_wait_connected();

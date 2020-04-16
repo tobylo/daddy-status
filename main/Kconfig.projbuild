@@ -44,7 +44,6 @@ menu "WiFi setup"
 endmenu
 
 menu "Power saving setup"
-
     choice POWER_SAVE_MODE
         prompt "power save mode"
         default POWER_SAVE_MIN_MODEM

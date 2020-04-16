@@ -11,5 +11,6 @@ esp_err_t refresh_token();
 #define PRESENCE_AVAILABLE 0U
 #define PRESENCE_BUSY 1U
 #define PRESENCE_DO_NOT_DISTURB 2U
+#define PRESENCE_OFF_WORK 3U
 
 #endif

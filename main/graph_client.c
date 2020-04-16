@@ -443,8 +443,7 @@ void poll_presence_task(void *pvParameters)
 
     for(;;)
     {
-        wifi_wait_connected();
-        vTaskDelay(3750 / portTICK_PERIOD_MS);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
 
         do {
             if(err == ESP_ERR_HTTP_EAGAIN) {
@@ -452,6 +451,7 @@ void poll_presence_task(void *pvParameters)
                 ESP_LOGD(GRAPH_CLIENT_TAG, "since intermittent error, adding a delay of %d ms..", delay);
                 vTaskDelay(delay / portTICK_PERIOD_MS);
             }
+            wifi_wait_connected();
             err = esp_http_client_perform(GRAPH_CLIENT);
         } while(err == ESP_ERR_HTTP_EAGAIN);
 
@@ -507,9 +507,6 @@ void poll_presence_task(void *pvParameters)
         {
             cases ("Available")
             cases ("AvailableIdle")
-            cases ("Offline")
-            cases ("OffWork")
-            cases ("OutOfOffice")
             cases ("Away")
             cases ("BeRightBack")
             cases ("Inactive")
@@ -527,6 +524,11 @@ void poll_presence_task(void *pvParameters)
             cases ("Presenting")
             cases ("UrgentInterruptionsOnly")
                 presence = PRESENCE_DO_NOT_DISTURB;
+                break;
+            cases ("Offline")
+            cases ("OffWork")
+            cases ("OutOfOffice")
+                presence = PRESENCE_OFF_WORK;
                 break;
         } switchs_end
 
