@@ -10,8 +10,6 @@
 static const char* TAG = "ledcontrol";
 static TaskHandle_t led_task_handle = NULL;
 
-static bool running_rainbow = false;
-
 static const int BLINK_INTERVAL = 750;
 static struct led_color_t DESIRED_COLORS[LED_STRIP_LENGTH];
 
@@ -72,7 +70,6 @@ static void leds_helper_stop()
         vTaskDelete( led_task_handle );
         led_task_handle = NULL;
         led_strip_clear(&led_strip);
-        running_rainbow = false;
     }
 }
 
@@ -137,10 +134,7 @@ void leds_color(struct led_color_t color)
 
 void leds_rainbow()
 {
-    if(running_rainbow == false) {
-        running_rainbow = true;
-        xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
-    }
+    xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
 }
 
 void leds_apply(bool flash)
