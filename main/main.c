@@ -15,6 +15,7 @@
 
 static const char* TAG = "main";
 static xQueueHandle evt_queue = NULL;
+static unsigned int current = 1000;
 
 esp_err_t nvs_init()
 {
@@ -50,20 +51,26 @@ void presence_handler_task(void *pvParameters)
         if(xQueueReceive(*queue, &presence, portMAX_DELAY)) 
         {
             ESP_LOGD(TAG, "received presence event");
-            if(presence == PRESENCE_AVAILABLE) {
+            if(presence == current) {
+                ESP_LOGD(TAG, "daddy status unchanged..");
+            } else if(presence == PRESENCE_AVAILABLE) {
                 ESP_LOGD(TAG, "daddy status: available");
+                current = presence;
                 leds_color(LED_COLOR_GREEN);
                 leds_apply(false);
             } else if(presence == PRESENCE_BUSY) {
                 ESP_LOGD(TAG, "daddy status: busy");
+                current = presence;
                 led_color(0, LED_COLOR_YELLOW);
                 led_color(1, LED_COLOR_OFF);
                 leds_apply(false);
             } else if(presence == PRESENCE_OFF_WORK) {
                 ESP_LOGD(TAG, "Daddy status: play time");
+                current = presence;
                 leds_rainbow();
             } else { //if(presence == PRESENCE_DO_NOT_DISTURB)
                 ESP_LOGD(TAG, "daddy status: DND");
+                current = presence;
                 leds_color(LED_COLOR_RED);
                 leds_apply(true);
             }
