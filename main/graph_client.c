@@ -208,7 +208,6 @@ static esp_err_t init_aad_auth_flow()
     ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_read: complete");
     buffer[read_len] = 0;
     ESP_LOGD(AUTH_CLIENT_TAG, "read_len = %d", read_len);
-    // ESP_LOGI(AUTH_CLIENT_TAG, "read response: %s", buffer);
     
     // parse data
     cJSON *root = cJSON_Parse(buffer);
