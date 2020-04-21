@@ -208,7 +208,7 @@ static esp_err_t init_aad_auth_flow()
     ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_read: complete");
     buffer[read_len] = 0;
     ESP_LOGD(AUTH_CLIENT_TAG, "read_len = %d", read_len);
-    ESP_LOGI(AUTH_CLIENT_TAG, "read response: %s", buffer);
+    // ESP_LOGI(AUTH_CLIENT_TAG, "read response: %s", buffer);
     
     // parse data
     cJSON *root = cJSON_Parse(buffer);
@@ -240,7 +240,7 @@ static esp_err_t fetch_token(char *refresh_token)
     {
         ESP_LOGD(AUTH_CLIENT_TAG, "running tag polling..");
 
-        if(status_code != 0 || err == ESP_ERR_HTTP_EAGAIN) {
+        if(status_code != 0 || status_code >= 500 || err == ESP_ERR_HTTP_EAGAIN) {
             int delay = 30000;
             ESP_LOGD(AUTH_CLIENT_TAG, "since intermittent error, adding a delay of %d ms..", delay);
             vTaskDelay(delay / portTICK_PERIOD_MS);
@@ -441,8 +441,18 @@ void poll_presence_task(void *pvParameters)
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
+    unsigned int retries = 0;
     for(;;)
     {
+        if(retries >= 5) {
+            ESP_LOGE(GRAPH_CLIENT_TAG, "Retried %d times, trying to re-initialize client.", retries);
+            esp_http_client_close(GRAPH_CLIENT);
+            esp_http_client_cleanup(GRAPH_CLIENT);
+            GRAPH_CLIENT = NULL;
+            ESP_ERROR_CHECK(init_graph_client());
+            retries = 0;
+        }
+        
         vTaskDelay(2000 / portTICK_PERIOD_MS);
 
         do {
@@ -457,8 +467,11 @@ void poll_presence_task(void *pvParameters)
 
         if (err != ESP_OK) {
             ESP_LOGE(GRAPH_CLIENT_TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+            retries += 1;
             continue;
         }
+
+        retries = 0;
 
         int status_code = esp_http_client_get_status_code(GRAPH_CLIENT);
         int content_length = esp_http_client_get_content_length(GRAPH_CLIENT);
@@ -471,18 +484,11 @@ void poll_presence_task(void *pvParameters)
             continue;
         }
 
-        if(status_code >= 500)
+        if(status_code != 200)
         {
-            ESP_LOGE(GRAPH_CLIENT_TAG, "received status code %d, waiting an extra minute and trying again", status_code);
-            vTaskDelay(60000 / portTICK_PERIOD_MS);
+            ESP_LOGE(GRAPH_CLIENT_TAG, "received status code %d, waiting an extra 30 sec and trying again", status_code);
+            vTaskDelay(30000 / portTICK_PERIOD_MS);
             continue;
-        }
-
-        if (status_code != 200)
-        {
-            ESP_LOGE(GRAPH_CLIENT_TAG, "received status code %d, will not continue..", status_code);
-            vTaskDelete(NULL);
-            return;
         }
 
         // fetch response

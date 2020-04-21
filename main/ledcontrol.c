@@ -64,23 +64,21 @@ static void leds_rainbow_task(void *pvParameters)
     }   
 }
 
-static void leds_helper_stop()
+static void leds_helper_stop_task()
 {
     if(led_task_handle != NULL) {
         vTaskDelete( led_task_handle );
         led_task_handle = NULL;
-        led_strip_clear(&led_strip);
     }
+    led_strip_clear(&led_strip);
 }
 
-void leds_helper_blink_task(void *pvParameters)
+void leds_blink_task(void *pvParameters)
 {
     for(;;)
     {
-        for (int i = 0; i < LED_STRIP_LENGTH; i++)
-        {
+        for (int i = 0; i < LED_STRIP_LENGTH; i++) {
             led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
-            ESP_LOGD(TAG, "led %d flashing R:%d G:%d B:%d\n", i, DESIRED_COLORS[i].red, DESIRED_COLORS[i].green, DESIRED_COLORS[i].blue);
         }
         led_strip_show(&led_strip);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
@@ -93,7 +91,7 @@ void leds_helper_blink_task(void *pvParameters)
 
 void leds_clear()
 {
-    leds_helper_stop();
+    leds_helper_stop_task();
     led_strip_show(&led_strip);
 }
 
@@ -112,7 +110,7 @@ bool leds_init()
 
 void led_color(int led_index, struct led_color_t color)
 {
-    leds_helper_stop();
+    leds_helper_stop_task();
     if(led_index >= LED_STRIP_LENGTH) {
         ESP_LOGE(TAG, "tried to set led color for index %d, array only contains %d leds", led_index, LED_STRIP_LENGTH);
         return;
@@ -124,7 +122,7 @@ void led_color(int led_index, struct led_color_t color)
 
 void leds_color(struct led_color_t color)
 {
-    leds_helper_stop();
+    leds_helper_stop_task();
     for (int i = 0; i < LED_STRIP_LENGTH; i++)
     {
         DESIRED_COLORS[i] = color;
@@ -140,7 +138,7 @@ void leds_rainbow()
 void leds_apply(bool flash)
 {
     if(flash) {
-        xTaskCreate(leds_helper_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
+        xTaskCreate(leds_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
     } else {
         led_strip_show(&led_strip);
     }

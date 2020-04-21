@@ -45,7 +45,7 @@ void presence_handler_task(void *pvParameters)
     QueueHandle_t *queue = pvParameters;
 
     ESP_LOGI(TAG, "Retrieve task started..");
-    unsigned int presence;
+    unsigned int presence = 1000;
     for(;;) 
     {
         if(xQueueReceive(*queue, &presence, portMAX_DELAY)) 
@@ -56,21 +56,25 @@ void presence_handler_task(void *pvParameters)
             } else if(presence == PRESENCE_AVAILABLE) {
                 ESP_LOGD(TAG, "daddy status: available");
                 current = presence;
+                leds_clear();
                 leds_color(LED_COLOR_GREEN);
                 leds_apply(false);
             } else if(presence == PRESENCE_BUSY) {
                 ESP_LOGD(TAG, "daddy status: busy");
                 current = presence;
+                leds_clear();
                 led_color(0, LED_COLOR_YELLOW);
                 led_color(1, LED_COLOR_OFF);
                 leds_apply(false);
             } else if(presence == PRESENCE_OFF_WORK) {
                 ESP_LOGD(TAG, "Daddy status: play time");
                 current = presence;
+                leds_clear();
                 leds_rainbow();
             } else { //if(presence == PRESENCE_DO_NOT_DISTURB)
                 ESP_LOGD(TAG, "daddy status: DND");
                 current = presence;
+                leds_clear();
                 leds_color(LED_COLOR_RED);
                 leds_apply(true);
             }
