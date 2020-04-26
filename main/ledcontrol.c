@@ -9,9 +9,10 @@
 
 static const char* TAG = "ledcontrol";
 static TaskHandle_t led_task_handle = NULL;
+static bool task_running = false;
 
 static const int BLINK_INTERVAL = 750;
-static struct led_color_t DESIRED_COLORS[LED_STRIP_LENGTH];
+static struct led_color_t *DESIRED_COLORS[LED_STRIP_LENGTH];
 
 const uint8_t hsv_lookup[121] = {
     0, 2, 4, 6, 8, 11, 13, 15, 17, 19, 21, 23, 25, 28, 30, 32, 34, 36, 38, 40,
@@ -48,6 +49,9 @@ static void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensi
 
 static void leds_rainbow_task(void *pvParameters)
 {
+    ESP_LOGD(TAG, "called: leds_rainbow_task");
+
+    task_running = true;
     ESP_LOGD(TAG, "running rainbow leds");
     for(;;)
     {
@@ -64,23 +68,25 @@ static void leds_rainbow_task(void *pvParameters)
     }   
 }
 
-static void leds_helper_stop()
+static void leds_helper_stop_task()
 {
-    if(led_task_handle != NULL) {
+    ESP_LOGD(TAG, "called: leds_helper_stop_task");
+
+    if(task_running == true) {
+        ESP_LOGD(TAG, "leds_clear: task_running is true");
         vTaskDelete( led_task_handle );
-        led_task_handle = NULL;
-        led_strip_clear(&led_strip);
+        task_running = false;
     }
 }
 
-void leds_helper_blink_task(void *pvParameters)
+void leds_blink_task(void *pvParameters)
 {
+    ESP_LOGD(TAG, "called: leds_blink_task");
+    task_running = true;
     for(;;)
     {
-        for (int i = 0; i < LED_STRIP_LENGTH; i++)
-        {
-            led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
-            ESP_LOGD(TAG, "led %d flashing R:%d G:%d B:%d\n", i, DESIRED_COLORS[i].red, DESIRED_COLORS[i].green, DESIRED_COLORS[i].blue);
+        for (int i = 0; i < LED_STRIP_LENGTH; i++) {
+            led_strip_set_pixel_color(&led_strip, i, DESIRED_COLORS[i]);
         }
         led_strip_show(&led_strip);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
@@ -93,8 +99,14 @@ void leds_helper_blink_task(void *pvParameters)
 
 void leds_clear()
 {
-    leds_helper_stop();
-    led_strip_show(&led_strip);
+    ESP_LOGD(TAG, "called: leds_clear");
+
+    leds_helper_stop_task();
+    led_strip_clear(&led_strip);
+    for (int i = 0; i < LED_STRIP_LENGTH; i++) {
+        DESIRED_COLORS[i] = &LED_COLOR_OFF;
+    }
+    leds_apply(false);
 }
 
 bool leds_init()
@@ -110,38 +122,55 @@ bool leds_init()
     return led_init_ok;
 }
 
-void led_color(int led_index, struct led_color_t color)
+void led_color(int led_index, struct led_color_t *color)
 {
-    leds_helper_stop();
+    ESP_LOGD(TAG, "called: led_color");
+
     if(led_index >= LED_STRIP_LENGTH) {
         ESP_LOGE(TAG, "tried to set led color for index %d, array only contains %d leds", led_index, LED_STRIP_LENGTH);
         return;
     }
 
     DESIRED_COLORS[led_index] = color;
-    led_strip_set_pixel_color(&led_strip, led_index, &DESIRED_COLORS[led_index]);
+    while(led_strip_set_pixel_color(&led_strip, led_index, DESIRED_COLORS[led_index]) == false) {
+        ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+    }
 }
 
-void leds_color(struct led_color_t color)
+void leds_color(struct led_color_t *color)
 {
-    leds_helper_stop();
+    ESP_LOGD(TAG, "called: leds_color");
+
     for (int i = 0; i < LED_STRIP_LENGTH; i++)
     {
         DESIRED_COLORS[i] = color;
-        led_strip_set_pixel_color(&led_strip, i, &DESIRED_COLORS[i]);
+        while(led_strip_set_pixel_color(&led_strip, i, DESIRED_COLORS[i]) == false) {
+            ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        }
     }
 }
 
 void leds_rainbow()
 {
+    ESP_LOGD(TAG, "called: leds_rainbow");
+
     xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
 }
 
 void leds_apply(bool flash)
 {
+    ESP_LOGD(TAG, "called: leds_apply with %s", flash ? "TRUE" : "FALSE");
     if(flash) {
-        xTaskCreate(leds_helper_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
+        xTaskCreate(leds_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
     } else {
-        led_strip_show(&led_strip);
+        while(led_strip_show(&led_strip) == false) {
+            ESP_LOGE(TAG, "leds_apply: failed, retrying..");
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        }
+        
+        // add delay to give the leds a change to update
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
