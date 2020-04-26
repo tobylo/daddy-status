@@ -106,7 +106,7 @@ void leds_clear()
     for (int i = 0; i < LED_STRIP_LENGTH; i++) {
         DESIRED_COLORS[i] = &LED_COLOR_OFF;
     }
-    led_strip_show(&led_strip);
+    leds_apply(false);
 }
 
 bool leds_init()
@@ -169,5 +169,8 @@ void leds_apply(bool flash)
             ESP_LOGE(TAG, "leds_apply: failed, retrying..");
             vTaskDelay(250 / portTICK_PERIOD_MS);
         }
+        
+        // add delay to give the leds a change to update
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
