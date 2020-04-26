@@ -262,6 +262,7 @@ static esp_err_t fetch_token(char *refresh_token)
         if(err != ESP_OK)
         {
             ESP_LOGE(AUTH_CLIENT_TAG, "could not set post field for token fetch");
+            free(data);
             return err;
         }
         ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_set_post_field: complete");
@@ -271,13 +272,14 @@ static esp_err_t fetch_token(char *refresh_token)
         if((err = esp_http_client_perform(AUTH_CLIENT)) == ESP_ERR_HTTP_EAGAIN)
         {
             ESP_LOGI(AUTH_CLIENT_TAG, "perform return ESP_ERR_HTTP_EAGAIN, retrying again..");
+            free(data);
             continue;
         }
         if(err != ESP_OK)
         {
             ESP_LOGE(AUTH_CLIENT_TAG, "unable to execute method: %s", esp_err_to_name(err));
             free(data);
-            return err;
+            continue;
         }
         free(data);
         status_code = esp_http_client_get_status_code(AUTH_CLIENT);
@@ -537,7 +539,7 @@ void poll_presence_task(void *pvParameters)
                 break;
         } switchs_end
 
-        xQueueOverwrite(*evtQueueHandle, (void*) &presence);
+        xQueueSend(*evtQueueHandle, (void*) &presence, 0);
 
         cJSON_Delete(root);
         free(buffer);

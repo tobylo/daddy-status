@@ -48,7 +48,7 @@ static struct led_color_t LED_COLOR_GREEN = {
 
 bool leds_init();
 void leds_clear();
-void led_color(int led_number, struct led_color_t color);
-void leds_color(struct led_color_t color);
+void led_color(int led_number, struct led_color_t *color);
+void leds_color(struct led_color_t *color);
 void leds_rainbow();
 void leds_apply(bool flash);
