@@ -21,5 +21,11 @@
     "type_traits": "cpp",
     "utility": "cpp",
     "gpio.h": "c"
-  }
+  },
+  "idf.adapterTargetName": "esp32",
+  "idf.port": "/dev/ttyUSB0",
+  "idf.baudRate": "115200",
+  "idf.openOcdConfigs": [
+    "board/esp32-wrover.cfg"
+  ]
 }

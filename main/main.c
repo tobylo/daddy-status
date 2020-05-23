@@ -58,7 +58,17 @@ void presence_handler_task(void *pvParameters)
                 leds_clear();                
                 ESP_LOGD(TAG, "daddy status changed..");
 
-                if(presence == PRESENCE_OFF_WORK) {
+                if(presence == STATE_TOKEN_REFRESH) {
+                    ESP_LOGD(TAG, "Refreshing token");
+                    current = presence;
+                    leds_color(&LED_COLOR_YELLOW);
+                    leds_apply(true);
+                } else if(presence == STATE_TOKEN_RECEIVED) {
+                    ESP_LOGD(TAG, "Token received, fetching presence");
+                    current = presence;
+                    leds_color(&LED_COLOR_GREEN);
+                    leds_apply(true);
+                } else if(presence == PRESENCE_OFF_WORK) {
                     ESP_LOGD(TAG, "Daddy status: play time");
                     current = presence;
                     leds_rainbow();
