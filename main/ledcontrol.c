@@ -9,7 +9,6 @@
 
 static const char* TAG = "ledcontrol";
 static TaskHandle_t led_task_handle = NULL;
-static bool task_running = false;
 
 static const int BLINK_INTERVAL = 750;
 static struct led_color_t *DESIRED_COLORS[LED_STRIP_LENGTH];
@@ -50,9 +49,6 @@ static void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensi
 static void leds_rainbow_task(void *pvParameters)
 {
     ESP_LOGD(TAG, "called: leds_rainbow_task");
-
-    task_running = true;
-    ESP_LOGD(TAG, "running rainbow leds");
     for(;;)
     {
         struct led_color_t color;
@@ -71,18 +67,18 @@ static void leds_rainbow_task(void *pvParameters)
 static void leds_helper_stop_task()
 {
     ESP_LOGD(TAG, "called: leds_helper_stop_task");
-
-    if(task_running == true) {
-        ESP_LOGD(TAG, "leds_clear: task_running is true");
-        vTaskDelete( led_task_handle );
-        task_running = false;
+    TaskHandle_t xTask = led_task_handle;
+    if( led_task_handle != NULL )
+    {
+        led_task_handle = NULL;
+        ESP_LOGI(TAG, "deleting led_task");
+        vTaskDelete( xTask );
     }
 }
 
 void leds_blink_task(void *pvParameters)
 {
     ESP_LOGD(TAG, "called: leds_blink_task");
-    task_running = true;
     for(;;)
     {
         for (int i = 0; i < LED_STRIP_LENGTH; i++) {
@@ -155,7 +151,6 @@ void leds_color(struct led_color_t *color)
 void leds_rainbow()
 {
     ESP_LOGD(TAG, "called: leds_rainbow");
-
     xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
 }
 

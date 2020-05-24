@@ -25,6 +25,8 @@ static const char *GRAPH_CLIENT_TAG = "graph-client";
 static esp_http_client_handle_t AUTH_CLIENT = NULL;
 static esp_http_client_handle_t GRAPH_CLIENT = NULL;
 
+static QueueHandle_t *STATE_QUEUE_HANDLE;
+
 static char *URL_FORMAT = NULL;
 
 static const char *TENANT_ID = CONFIG_AAD_TENANT_ID;
@@ -508,7 +510,7 @@ void poll_presence_task(void *pvParameters)
         char *presence_activity = cJSON_GetObjectItem(root,"activity")->valuestring;
         ESP_LOGI(GRAPH_CLIENT_TAG, "presence: %s", presence_activity);
 
-        unsigned int presence;
+        unsigned int state;
         
         switchs (presence_activity)
         {
@@ -518,11 +520,11 @@ void poll_presence_task(void *pvParameters)
             cases ("BeRightBack")
             cases ("Inactive")
             cases ("PresenceUnknown")
-                presence = PRESENCE_AVAILABLE;
+                state = PRESENCE_AVAILABLE;
                 break;
             cases ("Busy")
             cases ("BusyIdle")
-                presence = PRESENCE_BUSY;
+                state = PRESENCE_BUSY;
                 break;
             cases ("DoNotDisturb")
             cases ("InACall")
@@ -530,24 +532,27 @@ void poll_presence_task(void *pvParameters)
             cases ("InAMeeting")
             cases ("Presenting")
             cases ("UrgentInterruptionsOnly")
-                presence = PRESENCE_DO_NOT_DISTURB;
+                state = PRESENCE_DO_NOT_DISTURB;
                 break;
             cases ("Offline")
             cases ("OffWork")
             cases ("OutOfOffice")
-                presence = PRESENCE_OFF_WORK;
+                state = PRESENCE_OFF_WORK;
                 break;
         } switchs_end
 
-        xQueueSend(*evtQueueHandle, (void*) &presence, 0);
+        xQueueSend(*evtQueueHandle, (void*) &state, 0);
 
         cJSON_Delete(root);
         free(buffer);
     }
 }
 
-esp_err_t refresh_token()
+esp_err_t refresh_token(QueueHandle_t *evtQueueHandle)
 {
+    unsigned int state = STATE_TOKEN_REFRESH;
+    xQueueSend(*evtQueueHandle, (void*) &state, 0);
+
     esp_err_t err;
     if(AUTH_CLIENT == NULL) {
         while((err = init_auth_client()) != ESP_OK) {
@@ -565,9 +570,16 @@ esp_err_t refresh_token()
             vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
+        
         err = fetch_token(NULL);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        if(err != ESP_OK) {
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
     }
+
+    state = STATE_TOKEN_RECEIVED;
+    xQueueSend(*evtQueueHandle, (void*) &state, 0);
 
     esp_http_client_close(AUTH_CLIENT);
     esp_http_client_cleanup(AUTH_CLIENT);
@@ -578,8 +590,9 @@ esp_err_t refresh_token()
 
 esp_err_t graph_client_init(QueueHandle_t *evtQueueHandle)
 {
+    STATE_QUEUE_HANDLE = evtQueueHandle;
     ESP_LOGI(AUTH_CLIENT_TAG, "initializing...");
-    refresh_token();
-    xTaskCreate(poll_presence_task, "poll_presence_task", 15375, evtQueueHandle, 5, NULL);
+    refresh_token(evtQueueHandle);
+    xTaskCreate(poll_presence_task, "poll_presence_task", 15375, STATE_QUEUE_HANDLE, 5, NULL);
     return ESP_OK;
 }
