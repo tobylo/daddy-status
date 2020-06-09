@@ -50,7 +50,6 @@ void presence_handler_task(void *pvParameters)
     {
         if(xQueueReceive(*queue, &presence, portMAX_DELAY)) 
         {
-            bool presenceChanged = true;
             ESP_LOGD(TAG, "received presence event");
             if(presence == current) {
                 ESP_LOGD(TAG, "daddy status unchanged..");
