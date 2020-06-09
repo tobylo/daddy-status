@@ -13,6 +13,42 @@ static TaskHandle_t led_task_handle = NULL;
 static const int BLINK_INTERVAL = 750;
 static struct led_color_t *DESIRED_COLORS[LED_STRIP_LENGTH];
 
+struct led_color_t led_strip_buf_1[LED_STRIP_LENGTH];
+struct led_color_t led_strip_buf_2[LED_STRIP_LENGTH];
+struct led_strip_t led_strip = {
+    .rgb_led_type = RGB_LED_TYPE_WS2812,
+    .rmt_channel = RMT_CHANNEL_1,
+    .rmt_interrupt_num = LED_STRIP_RMT_INTR_NUM,
+    .gpio = CONFIG_LED_DATA_GPIO,
+    .led_strip_buf_1 = led_strip_buf_1,
+    .led_strip_buf_2 = led_strip_buf_2,
+    .led_strip_length = LED_STRIP_LENGTH
+};
+
+struct led_color_t LED_COLOR_OFF = {
+    .red = 0,
+    .green = 0,
+    .blue = 0
+};
+
+struct led_color_t LED_COLOR_YELLOW = {
+    .red = 255,
+    .green = 255,
+    .blue = 0
+};
+
+struct led_color_t LED_COLOR_RED = {
+    .red = 180,
+    .green = 0,
+    .blue = 0
+};
+
+struct led_color_t LED_COLOR_GREEN = {
+    .red = 0,
+    .green = 140,
+    .blue = 0
+};
+
 const uint8_t hsv_lookup[121] = {
     0, 2, 4, 6, 8, 11, 13, 15, 17, 19, 21, 23, 25, 28, 30, 32, 34, 36, 38, 40,
     42, 45, 47, 49, 51, 53, 55, 57, 59, 62, 64, 66, 68, 70, 72, 74, 76, 79, 81, 
