@@ -1,599 +1,378 @@
-#include <string.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_system.h"
-#include "nvs_flash.h"
-#include "nvs.h"
-#include "esp_event.h"
-#include "esp_tls.h"
-#include "esp_http_client.h"
 #include "graph_client.h"
-#include "cJSON.h"
+#include "protocol.h"
 #include "wifi.h"
-#include "uri_encode.h"
-#include "switchs.h"
+#include "freertos/task.h"
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
+#include "esp_log.h"
+#include "esp_netif_sntp.h"
+#include "esp_random.h"
+#include "esp_timer.h"
+#include "nvs.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 
-#define MAX_HTTP_RECV_BUFFER 4096
-#define MAX_HTTP_TX_BUFFER 2048
-static const char *AUTH_CLIENT_TAG = "auth-client";
-static const char *GRAPH_CLIENT_TAG = "graph-client";
+#define RESPONSE_CAPACITY (16384 + 1)
+#define TOKEN_LIMIT 8192
+static const char *TAG = "graph";
+static const char *SCOPE = "https://graph.microsoft.com/Presence.Read offline_access";
+static QueueHandle_t state_queue;
+static TaskHandle_t worker;
+static char *access_token;
+static int64_t access_deadline;
 
-static esp_http_client_handle_t AUTH_CLIENT = NULL;
-static esp_http_client_handle_t GRAPH_CLIENT = NULL;
+typedef struct {
+    response_buffer_t body;
+    int status;
+    unsigned retry_after;
+} http_response_t;
 
-static QueueHandle_t *STATE_QUEUE_HANDLE;
-
-static char *URL_FORMAT = NULL;
-
-static const char *TENANT_ID = CONFIG_AAD_TENANT_ID;
-static const char *CLIENT_ID = CONFIG_AAD_CLIENT_ID;
-static char *DEVICE_CODE = NULL;
-
-static const char *NVS_REFRESH_TOKEN_KEY = "refresh_token";
-static const char *NVS_ACCESS_TOKEN_KEY = "access_token";
-
-static nvs_handle_t NVS_HANDLE;
-
-static const char *GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
-static const char *SCOPE = "presence.read offline_access";
-
-
-static esp_err_t nvs_graphapi_open(void)
+static void publish(unsigned state)
 {
-    ESP_LOGD(AUTH_CLIENT_TAG, "Opening Non-Volatile Storage (NVS) handle... ");
-    esp_err_t err = nvs_open("graphapi", NVS_READWRITE, &NVS_HANDLE);
-    if (err != ESP_OK) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-        return err;
-    } else {
-        ESP_LOGD(AUTH_CLIENT_TAG, "NVS open");
-        return ESP_OK;
+    if (xQueueSend(state_queue, &state, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Status queue full");
     }
 }
 
-static void nvs_graphapi_close(void)
+static void delay_seconds(unsigned seconds)
 {
-    nvs_close(NVS_HANDLE);
+    vTaskDelay(pdMS_TO_TICKS(seconds * 1000U));
 }
 
-esp_err_t _graph_client_event_handler(esp_http_client_event_t *evt)
+static esp_err_t http_event(esp_http_client_event_t *event)
 {
-    switch(evt->event_id) {
-        default:
-            break;
-        case HTTP_EVENT_ERROR:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ERROR");
-            break;
-        case HTTP_EVENT_ON_CONNECTED:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ON_CONNECTED");
-            break;
-        case HTTP_EVENT_HEADER_SENT:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_HEADER_SENT");
-            break;
-        case HTTP_EVENT_ON_HEADER:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
-            break;
-        case HTTP_EVENT_ON_DATA:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-            if (!esp_http_client_is_chunked_response(evt->client)) {
-                // Write out data
-                ESP_LOGD(AUTH_CLIENT_TAG, "%.*s", evt->data_len, (char*)evt->data);
-            }
-            break;
-        case HTTP_EVENT_ON_FINISH:
-            ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ON_FINISH");
-            break;
-        case HTTP_EVENT_DISCONNECTED:
-            ESP_LOGI(AUTH_CLIENT_TAG, "HTTP_EVENT_DISCONNECTED");
-            int mbedtls_err = 0;
-            esp_err_t err = esp_tls_get_and_clear_last_error(evt->data, &mbedtls_err, NULL);
-            if (err != 0) {
-                ESP_LOGI(AUTH_CLIENT_TAG, "Last esp error code: 0x%x", err);
-                ESP_LOGI(AUTH_CLIENT_TAG, "Last mbedtls failure: 0x%x", mbedtls_err);
-            }
-            break;
+    http_response_t *response = event->user_data;
+    if (event->event_id == HTTP_EVENT_ON_DATA && event->data_len > 0) {
+        if (!response_append(&response->body, event->data, (size_t)event->data_len)) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+    } else if (event->event_id == HTTP_EVENT_ON_HEADER &&
+               strcasecmp(event->header_key, "Retry-After") == 0) {
+        response->retry_after = retry_after_seconds(event->header_value);
     }
     return ESP_OK;
 }
 
-static esp_err_t init_auth_client(void)
+static void response_free(http_response_t *response)
 {
-    ESP_LOGD(AUTH_CLIENT_TAG, "initializing auth http client");
+    secret_free(response->body.data);
+    memset(response, 0, sizeof(*response));
+}
 
-    // set up auth url format
-    asprintf(&URL_FORMAT, "https://login.microsoftonline.com/%s/oauth2/v2.0/%%s", TENANT_ID);
-    
-    esp_err_t err = ESP_OK;
-
-    esp_http_client_config_t config = {
-        .url = URL_FORMAT,
-        .event_handler = _graph_client_event_handler,
-        .buffer_size = MAX_HTTP_RECV_BUFFER
+static esp_err_t request(const char *url, const char *form, const char *token,
+                         http_response_t *response)
+{
+    memset(response, 0, sizeof(*response));
+    response->body.data = calloc(RESPONSE_CAPACITY, 1);
+    if (!response->body.data) return ESP_ERR_NO_MEM;
+    response->body.capacity = RESPONSE_CAPACITY;
+    const esp_http_client_config_t config = {
+        .url = url,
+        .method = form ? HTTP_METHOD_POST : HTTP_METHOD_GET,
+        .event_handler = http_event,
+        .user_data = response,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 15000,
+        .disable_auto_redirect = true,
+        .buffer_size = 2048,
+        .buffer_size_tx = TOKEN_LIMIT + 128,
     };
-    AUTH_CLIENT = esp_http_client_init(&config);
-    err = esp_http_client_set_header(AUTH_CLIENT, "Content-Type", "application/x-www-form-urlencoded");
-    if(err != ESP_OK)
-    {
-        ESP_LOGE(AUTH_CLIENT_TAG, "could not initialize http client");
-        return err;
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) return ESP_ERR_NO_MEM;
+    esp_err_t err = esp_http_client_set_header(client, "Accept", "application/json");
+    char *authorization = NULL;
+    if (err == ESP_OK && token) {
+        if (asprintf(&authorization, "Bearer %s", token) < 0) err = ESP_ERR_NO_MEM;
+        else err = esp_http_client_set_header(client, "Authorization", authorization);
     }
-
-    err = esp_http_client_set_method(AUTH_CLIENT, HTTP_METHOD_POST);
-    if(err != ESP_OK)
-    {
-        ESP_LOGE(AUTH_CLIENT_TAG, "could not initialize http client");
-        return err;
+    if (err == ESP_OK && form) {
+        err = esp_http_client_set_header(client, "Content-Type", "application/x-www-form-urlencoded");
+        if (err == ESP_OK) err = esp_http_client_set_post_field(client, form, strlen(form));
     }
+    if (err == ESP_OK) err = esp_http_client_perform(client);
+    response->status = esp_http_client_get_status_code(client);
+    if (err == ESP_OK && (response->body.overflow || !esp_http_client_is_complete_data_received(client))) {
+        err = ESP_ERR_INVALID_SIZE;
+    }
+    esp_http_client_cleanup(client);
+    secret_free(authorization);
+    return err;
+}
 
+static esp_err_t token_read(char **token)
+{
+    *token = NULL;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("graphapi", NVS_READONLY, &handle);
+    if (err != ESP_OK) return err;
+    size_t size = 0;
+    err = nvs_get_str(handle, "refresh_token", NULL, &size);
+    if (err == ESP_OK && (size < 2 || size > TOKEN_LIMIT + 1)) err = ESP_ERR_INVALID_SIZE;
+    if (err == ESP_OK) {
+        *token = calloc(size, 1);
+        if (!*token) err = ESP_ERR_NO_MEM;
+        else {
+            (*token)[0] = '\0';
+            err = nvs_get_str(handle, "refresh_token", *token, &size);
+        }
+    }
+    nvs_close(handle);
+    if (err != ESP_OK) { secret_free(*token); *token = NULL; }
+    return err;
+}
+
+static esp_err_t token_store(const char *token)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("graphapi", NVS_READWRITE, &handle);
+    if (err != ESP_OK) return err;
+    err = token ? nvs_set_str(handle, "refresh_token", token) : nvs_erase_key(handle, "refresh_token");
+    if (err == ESP_ERR_NVS_NOT_FOUND && !token) err = ESP_OK;
+    if (err == ESP_OK) {
+        esp_err_t erased = nvs_erase_key(handle, "access_token");
+        if (erased != ESP_OK && erased != ESP_ERR_NVS_NOT_FOUND) err = erased;
+    }
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+    return err;
+}
+
+static esp_err_t accept_tokens(const cJSON *root, bool refreshing)
+{
+    const char *access = json_string(root, "access_token");
+    const char *refresh = json_string(root, "refresh_token");
+    const char *type = json_string(root, "token_type");
+    unsigned expires;
+    if (!access || strlen(access) > TOKEN_LIMIT || !type || strcasecmp(type, "Bearer") ||
+        (!refreshing && !refresh) || (refresh && strlen(refresh) > TOKEN_LIMIT) ||
+        !json_seconds(root, "expires_in", &expires)) return ESP_ERR_INVALID_RESPONSE;
+    char *copy = strdup(access);
+    if (!copy) return ESP_ERR_NO_MEM;
+    esp_err_t err = refresh ? token_store(refresh) : ESP_OK;
+    if (err != ESP_OK) { secret_free(copy); return err; }
+    secret_free(access_token);
+    access_token = copy;
+    unsigned margin = expires > 120 ? 60 : expires / 2;
+    access_deadline = esp_timer_get_time() + (int64_t)(expires - margin) * 1000000;
     return ESP_OK;
 }
 
-static esp_err_t init_aad_auth_flow(void)
+static esp_err_t auth_request(const char *path, const char *form, http_response_t *response)
 {
-    ESP_LOGD(AUTH_CLIENT_TAG, "initializing Azure AD auth flow");
-
-    esp_err_t err = ESP_OK;
-
-    // TODO: Verify if refresh token exists in spiffy, if so, try to fetch new access token
-    // If successful, store new refresh token, otherwise continue
-
-    // update with correct path
-    char *url = NULL;
-    asprintf(&url, URL_FORMAT, "devicecode");
-    esp_http_client_set_url(AUTH_CLIENT, url);
-
-    do {
-        if(err == ESP_ERR_HTTP_EAGAIN)
-        {
-            int delay = 30000;
-            ESP_LOGD(AUTH_CLIENT_TAG, "since intermittent error, adding a delay of %d ms..", delay);
-            vTaskDelay(delay / portTICK_PERIOD_MS);
-        }
-
-        // create payload
-        char *data = NULL;
-        char *scope_encoded = malloc(sizeof(char)*strlen(SCOPE)*2);
-        uri_encode(SCOPE, strlen(SCOPE), scope_encoded);
-        asprintf(&data, "client_id=%s&scope=%s", CLIENT_ID, scope_encoded);
-        free(scope_encoded);
-        ESP_LOGD(AUTH_CLIENT_TAG, "Content of payload: %s", data);
-
-        if((err = esp_http_client_set_post_field(AUTH_CLIENT, data, strlen(data)) != ESP_OK))
-        {
-            ESP_LOGE(AUTH_CLIENT_TAG, "Failed to set payload: %s", esp_err_to_name(err));
-            free(url);
-            free(data);
-            return err;
-        }
-        err = esp_http_client_perform(AUTH_CLIENT);
-        free(data);
-    } while(err == ESP_ERR_HTTP_EAGAIN);
-
-    if(err != ESP_OK)
-    {
-        ESP_LOGE(AUTH_CLIENT_TAG, "Failed to execute POST method: %s", esp_err_to_name(err));
-        free(url);
-        return err;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_perform: complete");
-
-    
-    char *buffer = malloc(MAX_HTTP_RECV_BUFFER + 1);
-    if (buffer == NULL) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "Cannot malloc http receive buffer");
-        free(buffer);
-        free(url);
-        return ESP_FAIL;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "buffer malloc: complete");
-
-    // fetch response data
-    int content_length =  esp_http_client_get_content_length(AUTH_CLIENT);
-    if(content_length > MAX_HTTP_RECV_BUFFER) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "content length of %d is larger than the available buffer", content_length);
-        free(buffer);
-        free(url);
-        return ESP_FAIL;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_fetch_headers: complete");
-
-    int read_len;
-    read_len = esp_http_client_read(AUTH_CLIENT, buffer, content_length);
-    if (read_len <= 0) {
-        free(buffer);
-        free(url);
-        ESP_LOGE(AUTH_CLIENT_TAG, "Error read data");
-        return ESP_FAIL;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_read: complete");
-    buffer[read_len] = 0;
-    ESP_LOGD(AUTH_CLIENT_TAG, "read_len = %d", read_len);
-    
-    // parse data
-    cJSON *root = cJSON_Parse(buffer);
-    char *message = cJSON_GetObjectItem(root,"message")->valuestring;
-    DEVICE_CODE = cJSON_GetObjectItem(root, "device_code")->valuestring;
-    ESP_LOGI(AUTH_CLIENT_TAG, "%s", message);
-    ESP_LOGD(AUTH_CLIENT_TAG, "cJSON_Parse: complete");
-
-    // cleanup
-    free(root);
-    free(buffer);
-    free(url);
-    return ESP_OK;
+    char url[160];
+    int n = snprintf(url, sizeof(url), "https://login.microsoftonline.com/%s/oauth2/v2.0/%s",
+                     CONFIG_AAD_TENANT_ID, path);
+    if (n < 0 || n >= sizeof(url)) { memset(response, 0, sizeof(*response)); return ESP_ERR_INVALID_SIZE; }
+    return request(url, form, NULL, response);
 }
 
-static esp_err_t fetch_token(char *refresh_token)
+static char *token_form(const char *value, bool refreshing)
 {
-    esp_err_t err = ESP_OK;
+    char *encoded = form_encode(value);
+    if (!encoded) return NULL;
+    char *form = NULL;
+    int n = asprintf(&form, "client_id=%s&grant_type=%s&%s=%s", CONFIG_AAD_CLIENT_ID,
+                     refreshing ? "refresh_token" : "urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
+                     refreshing ? "refresh_token" : "device_code", encoded);
+    secret_free(encoded);
+    return n < 0 ? NULL : form;
+}
 
-    // set correct path
-    char *url = NULL;
-    asprintf(&url, URL_FORMAT, "token");
-    esp_http_client_set_url(AUTH_CLIENT, url);
-    ESP_LOGD(AUTH_CLIENT_TAG, "new url: %s", url);
-    free(url);
-
-    int status_code = 0;
-    while(status_code != 200)
-    {
-        ESP_LOGD(AUTH_CLIENT_TAG, "running tag polling..");
-
-        if(status_code != 0 || status_code >= 500 || err == ESP_ERR_HTTP_EAGAIN) {
-            int delay = 30000;
-            ESP_LOGD(AUTH_CLIENT_TAG, "since intermittent error, adding a delay of %d ms..", delay);
-            vTaskDelay(delay / portTICK_PERIOD_MS);
-        }
-
-        // create payload
-        char *data = NULL;
-        if(refresh_token == NULL) {
-            char *grant_type_encoded = malloc(sizeof(char)*strlen(GRANT_TYPE)*2);
-            uri_encode(GRANT_TYPE, strlen(GRANT_TYPE), grant_type_encoded);
-            asprintf(&data, "grant_type=%s&client_id=%s&device_code=%s", grant_type_encoded, CLIENT_ID, DEVICE_CODE);
-            free(grant_type_encoded);
+/* Returns NOT_FOUND only when the user must authorize again. */
+static esp_err_t refresh_access(unsigned *retry_after)
+{
+    char *refresh = NULL;
+    esp_err_t err = token_read(&refresh);
+    if (err != ESP_OK) return err;
+    char *form = token_form(refresh, true);
+    secret_free(refresh);
+    if (!form) return ESP_ERR_NO_MEM;
+    http_response_t response;
+    err = auth_request("token", form, &response);
+    secret_free(form);
+    *retry_after = response.retry_after;
+    cJSON *root = err == ESP_OK ? response_json(&response.body) : NULL;
+    if (err == ESP_OK) {
+        const char *code = json_string(root, "error");
+        if (response.status == 200) err = accept_tokens(root, true);
+        else if (response.status == 400 && code && !strcmp(code, "invalid_grant")) {
+            err = token_store(NULL);
+            if (err == ESP_OK) err = ESP_ERR_NVS_NOT_FOUND;
         } else {
-            asprintf(&data, "grant_type=refresh_token&client_id=%s&refresh_token=%s", CLIENT_ID, refresh_token);
-        }
-        ESP_LOGD(AUTH_CLIENT_TAG, "content of payload: %s", data);
-
-        ESP_LOGD(AUTH_CLIENT_TAG, "adding post data: %s", data);
-        err = esp_http_client_set_post_field(AUTH_CLIENT, data, strlen(data));
-        if(err != ESP_OK)
-        {
-            ESP_LOGE(AUTH_CLIENT_TAG, "could not set post field for token fetch");
-            free(data);
-            return err;
-        }
-        ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_set_post_field: complete");
-
-        ESP_LOGD(AUTH_CLIENT_TAG, "executing method call...");
-        wifi_wait_connected();
-        if((err = esp_http_client_perform(AUTH_CLIENT)) == ESP_ERR_HTTP_EAGAIN)
-        {
-            ESP_LOGI(AUTH_CLIENT_TAG, "perform return ESP_ERR_HTTP_EAGAIN, retrying again..");
-            free(data);
-            continue;
-        }
-        if(err != ESP_OK)
-        {
-            ESP_LOGE(AUTH_CLIENT_TAG, "unable to execute method: %s", esp_err_to_name(err));
-            free(data);
-            continue;
-        }
-        free(data);
-        status_code = esp_http_client_get_status_code(AUTH_CLIENT);
-        ESP_LOGD(AUTH_CLIENT_TAG, "response status code: %d", status_code);
-    }
-
-    // fetch response
-    char *buffer = malloc(MAX_HTTP_RECV_BUFFER + 1);
-    if (buffer == NULL) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "Cannot malloc http receive buffer");
-        return ESP_FAIL;
-    }
-
-    int content_length =  esp_http_client_get_content_length(AUTH_CLIENT);
-    if(content_length > MAX_HTTP_RECV_BUFFER) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "content length of %d is larger than the available buffer", content_length);
-        free(buffer);
-        return ESP_FAIL;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_get_content_length: complete");
-
-    int read_len;
-    read_len = esp_http_client_read(AUTH_CLIENT, buffer, content_length);
-    if (read_len <= 0) {
-        free(buffer);
-        ESP_LOGE(AUTH_CLIENT_TAG, "Error read data");
-        return ESP_FAIL;
-    }
-    ESP_LOGD(AUTH_CLIENT_TAG, "esp_http_client_read: %d bytes, complete", read_len);
-    ESP_LOGD(AUTH_CLIENT_TAG, "response: %s", buffer);
-
-    cJSON *root = cJSON_Parse(buffer);
-    char *at = cJSON_GetObjectItem(root, "access_token")->valuestring;
-    char *rt = cJSON_GetObjectItem(root, "refresh_token")->valuestring;
-    ESP_LOGI(AUTH_CLIENT_TAG, "access token: %s", at);
-    ESP_LOGI(AUTH_CLIENT_TAG, "refresh token: %s", rt);
-
-    // persist tokens for later use
-    nvs_graphapi_open();
-    if((err = nvs_set_str(NVS_HANDLE, NVS_REFRESH_TOKEN_KEY, rt)) != ESP_OK) {
-        ESP_LOGE(AUTH_CLIENT_TAG, "unable to update refresh token in nvs");
-    }
-    if(err == ESP_OK)
-    {
-        char *authorization_header_value = malloc(strlen(at)+8);
-        asprintf(&authorization_header_value, "Bearer %s", at);
-        if((err = nvs_set_str(NVS_HANDLE, NVS_ACCESS_TOKEN_KEY, authorization_header_value)) != ESP_OK) {
-            ESP_LOGE(AUTH_CLIENT_TAG, "unable to update access token in nvs");
-        }
-        free(authorization_header_value);
-    }
-    if(err == ESP_OK)
-    {
-        if((err = nvs_commit(NVS_HANDLE)) != ESP_OK) {
-            ESP_LOGE(AUTH_CLIENT_TAG, "unable to persist changes into nvs");
+            ESP_LOGW(TAG, "Token endpoint returned HTTP %d; verify app registration if persistent", response.status);
+            err = ESP_FAIL;
         }
     }
-    nvs_graphapi_close();    
-
-    // cleanup
     cJSON_Delete(root);
-    free(buffer);
-
+    response_free(&response);
     return err;
 }
 
-static esp_err_t refresh_access_token(void)
+static esp_err_t device_login(unsigned *retry_after)
 {
-    esp_err_t err = ESP_OK;
-
-    ESP_LOGI(AUTH_CLIENT_TAG, "looking for persisted refresh token in NVS");
-    ESP_ERROR_CHECK(nvs_graphapi_open());
-
-    size_t required_size;
-    nvs_get_str(NVS_HANDLE, NVS_REFRESH_TOKEN_KEY, NULL, &required_size);
-    char* refresh_token = malloc(required_size);
-    err = nvs_get_str(NVS_HANDLE, NVS_REFRESH_TOKEN_KEY, refresh_token, &required_size);
-
-    nvs_graphapi_close();
-
-    switch (err) {
-        case ESP_OK:
-            ESP_LOGI(AUTH_CLIENT_TAG, "persisted refresh token found, trying to refresh access token.");
-            ESP_LOGD(AUTH_CLIENT_TAG, "refresh token value: %s", refresh_token);
-            err = fetch_token(refresh_token);
-            break;
-        case ESP_ERR_NVS_NOT_FOUND:
-            ESP_LOGI(AUTH_CLIENT_TAG, "value is not initialized");
-            break;
-        default:
-            ESP_LOGI(AUTH_CLIENT_TAG, "error (%s) reading nvs!", esp_err_to_name(err));
-            break;
-    }
-    free(refresh_token);
-    return err;
-}
-
-static void graph_client_set_bearer_token(void)
-{
-    ESP_ERROR_CHECK(nvs_graphapi_open());
-    esp_err_t err;
-
-    size_t required_size;
-    nvs_get_str(NVS_HANDLE, NVS_ACCESS_TOKEN_KEY, NULL, &required_size);
-    char* authorization_header = malloc(required_size);
-    err = nvs_get_str(NVS_HANDLE, NVS_ACCESS_TOKEN_KEY, authorization_header, &required_size);
-
-    nvs_graphapi_close();
-
-    switch (err) {
-        case ESP_OK:
-            ESP_LOGI(GRAPH_CLIENT_TAG, "persisted authorization header found");
-            ESP_LOGD(GRAPH_CLIENT_TAG, "header value: %s", authorization_header);
-            break;
-        case ESP_ERR_NVS_NOT_FOUND:
-            ESP_LOGE(GRAPH_CLIENT_TAG, "value is not initialized, authorization header not set.");
-            break;
-        default:
-            ESP_LOGE(GRAPH_CLIENT_TAG, "error (%s) reading nvs! authorization header not set.", esp_err_to_name(err));
-            break;
-    }
-
-    err = esp_http_client_set_header(GRAPH_CLIENT, "authorization", authorization_header);
-}
-
-static esp_err_t init_graph_client(void)
-{
-    ESP_LOGD(GRAPH_CLIENT_TAG, "initializing graph API http client");
-    
-    esp_err_t err = ESP_OK;
-
-    esp_http_client_config_t config = {
-        .url = "https://graph.microsoft.com/beta/me/presence",
-        .event_handler = _graph_client_event_handler,
-        .buffer_size = MAX_HTTP_RECV_BUFFER,
-        .buffer_size_tx = MAX_HTTP_TX_BUFFER,
-        .method = HTTP_METHOD_GET
-    };
-    GRAPH_CLIENT = esp_http_client_init(&config);
-    esp_http_client_set_header(GRAPH_CLIENT, "user-agent", "daddy-status/0.3.0");
-    esp_http_client_set_header(GRAPH_CLIENT, "accept", "*/*");
-    graph_client_set_bearer_token();
-
-    err = esp_http_client_set_method(GRAPH_CLIENT, HTTP_METHOD_GET);
-    if(err != ESP_OK)
-    {
-        ESP_LOGE(GRAPH_CLIENT_TAG, "could not initialize http client");
-        return err;
-    }
-
-    return ESP_OK;
-}
-
-void poll_presence_task(void *pvParameters)
-{
-    QueueHandle_t *evtQueueHandle = pvParameters;
-
-    esp_err_t err;
-    while((err = init_graph_client()) != ESP_OK) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-
-    unsigned int retries = 0;
-    for(;;)
-    {
-        if(retries >= 5) {
-            ESP_LOGE(GRAPH_CLIENT_TAG, "Retried %d times, trying to re-initialize client.", retries);
-            esp_http_client_close(GRAPH_CLIENT);
-            esp_http_client_cleanup(GRAPH_CLIENT);
-            GRAPH_CLIENT = NULL;
-            ESP_ERROR_CHECK(init_graph_client());
-            retries = 0;
+    char *scope = form_encode(SCOPE);
+    if (!scope) return ESP_ERR_NO_MEM;
+    char *form = NULL;
+    int n = asprintf(&form, "client_id=%s&scope=%s", CONFIG_AAD_CLIENT_ID, scope);
+    free(scope);
+    if (n < 0) return ESP_ERR_NO_MEM;
+    http_response_t response;
+    esp_err_t err = auth_request("devicecode", form, &response);
+    free(form);
+    *retry_after = response.retry_after;
+    cJSON *root = err == ESP_OK ? response_json(&response.body) : NULL;
+    const char *code = json_string(root, "device_code");
+    const char *message = json_string(root, "message");
+    unsigned expires = 0, interval = 5;
+    char *device = NULL;
+    if (err == ESP_OK && response.status == 200 && code && strlen(code) <= TOKEN_LIMIT && message &&
+        json_seconds(root, "expires_in", &expires)) {
+        if (cJSON_HasObjectItem(root, "interval") && !json_seconds(root, "interval", &interval)) {
+            err = ESP_ERR_INVALID_RESPONSE;
+        } else {
+            device = strdup(code);
+            if (!device) err = ESP_ERR_NO_MEM;
+            else ESP_LOGI(TAG, "%s", message);
         }
-        
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-
-        do {
-            if(err == ESP_ERR_HTTP_EAGAIN) {
-                int delay = 30000;
-                ESP_LOGD(GRAPH_CLIENT_TAG, "since intermittent error, adding a delay of %d ms..", delay);
-                vTaskDelay(delay / portTICK_PERIOD_MS);
-            }
-            wifi_wait_connected();
-            err = esp_http_client_perform(GRAPH_CLIENT);
-        } while(err == ESP_ERR_HTTP_EAGAIN);
-
-        if (err != ESP_OK) {
-            ESP_LOGE(GRAPH_CLIENT_TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
-            retries += 1;
-            continue;
+    } else if (err == ESP_OK) err = ESP_ERR_INVALID_RESPONSE;
+    cJSON_Delete(root);
+    response_free(&response);
+    if (err != ESP_OK) return err;
+    int64_t deadline = esp_timer_get_time() + (int64_t)expires * 1000000;
+    form = token_form(device, false);
+    secret_free(device);
+    if (!form) return ESP_ERR_NO_MEM;
+    err = ESP_ERR_TIMEOUT;
+    while (esp_timer_get_time() + (int64_t)interval * 1000000 < deadline) {
+        delay_seconds(interval);
+        wifi_wait_connected();
+        if (esp_timer_get_time() >= deadline) break;
+        err = auth_request("token", form, &response);
+        root = err == ESP_OK ? response_json(&response.body) : NULL;
+        const char *error = json_string(root, "error");
+        bool again = false;
+        if (err == ESP_OK && response.status == 200) {
+            err = accept_tokens(root, false);
+        } else if (err != ESP_OK || response.status == 429 || response.status >= 500) {
+            interval = interval < 60 ? interval * 2 : interval;
+            if (response.retry_after > interval) interval = response.retry_after;
+            err = ESP_FAIL;
+            again = true;
+        } else if (error && (!strcmp(error, "authorization_pending") || !strcmp(error, "slow_down"))) {
+            if (!strcmp(error, "slow_down")) interval += 5;
+            err = ESP_ERR_NOT_FINISHED;
+            again = true;
+        } else {
+            /* Expired, declined, or invalid device code: finish this flow. */
+            err = ESP_ERR_INVALID_RESPONSE;
         }
-
-        retries = 0;
-
-        int status_code = esp_http_client_get_status_code(GRAPH_CLIENT);
-        int content_length = esp_http_client_get_content_length(GRAPH_CLIENT);
-
-        if(status_code == 401 || status_code == 403)
-        {
-            ESP_LOGI(GRAPH_CLIENT_TAG, "received status code %d, refreshing access token to see if possible.", status_code);
-            ESP_ERROR_CHECK(refresh_token(evtQueueHandle));
-            graph_client_set_bearer_token();
-            continue;
-        }
-
-        if(status_code != 200)
-        {
-            ESP_LOGE(GRAPH_CLIENT_TAG, "received status code %d, waiting an extra 30 sec and trying again", status_code);
-            vTaskDelay(30000 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        // fetch response
-        char *buffer = malloc(256 + 1);
-        int read_len;
-        read_len = esp_http_client_read(GRAPH_CLIENT, buffer, content_length);
-        if (read_len <= 0) {
-            free(buffer);
-            ESP_LOGE(GRAPH_CLIENT_TAG, "Error read data");
-            continue;
-        }
-        ESP_LOGD(GRAPH_CLIENT_TAG, "esp_http_client_read: %d bytes, complete", read_len);
-        ESP_LOGD(GRAPH_CLIENT_TAG, "response: %s", buffer);
-        
-        cJSON *root = cJSON_Parse(buffer);
-        char *presence_activity = cJSON_GetObjectItem(root,"activity")->valuestring;
-        ESP_LOGI(GRAPH_CLIENT_TAG, "presence: %s", presence_activity);
-
-        unsigned int state = STATE_FAILED;
-        
-        switchs (presence_activity)
-        {
-            cases ("Available")
-            cases ("AvailableIdle")
-            cases ("Away")
-            cases ("BeRightBack")
-            cases ("Inactive")
-            cases ("PresenceUnknown")
-                state = PRESENCE_AVAILABLE;
-                break;
-            cases ("Busy")
-            cases ("BusyIdle")
-                state = PRESENCE_BUSY;
-                break;
-            cases ("DoNotDisturb")
-            cases ("InACall")
-            cases ("InAConferenceCall")
-            cases ("InAMeeting")
-            cases ("Presenting")
-            cases ("UrgentInterruptionsOnly")
-                state = PRESENCE_DO_NOT_DISTURB;
-                break;
-            cases ("Offline")
-            cases ("OffWork")
-            cases ("OutOfOffice")
-                state = PRESENCE_OFF_WORK;
-                break;
-        } switchs_end
-
-        xQueueSend(*evtQueueHandle, (void*) &state, 0);
-
         cJSON_Delete(root);
-        free(buffer);
+        response_free(&response);
+        if (!again) break;
+    }
+    secret_free(form);
+    return err;
+}
+
+static unsigned presence_state(const cJSON *root)
+{
+    const char *activity = json_string(root, "activity");
+    if (!activity) return STATE_FAILED;
+    static const struct { const char *activity; unsigned state; } states[] = {
+        {"Available", PRESENCE_AVAILABLE}, {"AvailableIdle", PRESENCE_AVAILABLE},
+        {"Away", PRESENCE_AVAILABLE}, {"BeRightBack", PRESENCE_AVAILABLE},
+        {"Inactive", PRESENCE_AVAILABLE}, {"Busy", PRESENCE_BUSY}, {"BusyIdle", PRESENCE_BUSY},
+        {"DoNotDisturb", PRESENCE_DO_NOT_DISTURB}, {"InACall", PRESENCE_DO_NOT_DISTURB},
+        {"InAConferenceCall", PRESENCE_DO_NOT_DISTURB}, {"InAMeeting", PRESENCE_DO_NOT_DISTURB},
+        {"Presenting", PRESENCE_DO_NOT_DISTURB}, {"UrgentInterruptionsOnly", PRESENCE_DO_NOT_DISTURB},
+        {"Offline", PRESENCE_OFF_WORK}, {"OffWork", PRESENCE_OFF_WORK}, {"OutOfOffice", PRESENCE_OFF_WORK},
+    };
+    for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
+        if (!strcmp(activity, states[i].activity)) return states[i].state;
+    }
+    return STATE_FAILED;
+}
+
+static bool guid_valid(const char *value)
+{
+    if (strlen(value) != 36) return false;
+    for (size_t i = 0; i < 36; ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (value[i] != '-') return false;
+        } else if (!((value[i] >= '0' && value[i] <= '9') ||
+                     (value[i] >= 'a' && value[i] <= 'f') ||
+                     (value[i] >= 'A' && value[i] <= 'F'))) return false;
+    }
+    return true;
+}
+
+static void poll_presence_task(void *unused)
+{
+    if (!guid_valid(CONFIG_AAD_TENANT_ID) || !guid_valid(CONFIG_AAD_CLIENT_ID)) {
+        ESP_LOGE(TAG, "Set tenant and client GUIDs in menuconfig before connecting");
+        publish(STATE_FAILED);
+        /* Keep ownership of worker until reboot; init must not create a second worker. */
+        vTaskSuspend(NULL);
+    }
+    wifi_wait_connected();
+    esp_sntp_config_t time_config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_err_t err = esp_netif_sntp_init(&time_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Cannot initialize time synchronization: %s", esp_err_to_name(err));
+        publish(STATE_FAILED);
+        vTaskSuspend(NULL);
+    }
+    while (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(15000)) != ESP_OK) {
+        publish(STATE_FAILED);
+        ESP_LOGW(TAG, "Waiting for clock synchronization before TLS");
+    }
+    unsigned backoff = 2;
+    for (;;) {
+        wifi_wait_connected();
+        unsigned retry_after = 0;
+        if (!access_token || esp_timer_get_time() >= access_deadline) {
+            publish(STATE_TOKEN_REFRESH);
+            err = refresh_access(&retry_after);
+            if (err == ESP_ERR_NVS_NOT_FOUND || err == ESP_ERR_INVALID_SIZE) err = device_login(&retry_after);
+            if (err == ESP_OK) publish(STATE_TOKEN_RECEIVED);
+        } else err = ESP_OK;
+        if (err == ESP_OK) {
+            http_response_t response;
+            err = request("https://graph.microsoft.com/beta/me/presence", NULL, access_token, &response);
+            retry_after = response.retry_after;
+            if (err == ESP_OK && response.status == 200) {
+                cJSON *root = response_json(&response.body);
+                if (!root || !json_string(root, "activity")) err = ESP_ERR_INVALID_RESPONSE;
+                else publish(presence_state(root));
+                cJSON_Delete(root);
+            } else {
+                if (response.status == 401) { secret_free(access_token); access_token = NULL; }
+                if (response.status == 403) {
+                    ESP_LOGE(TAG, "Presence permission denied; check app consent and tenant policy");
+                    retry_after = 60;
+                }
+                err = ESP_FAIL;
+            }
+            response_free(&response);
+        }
+        if (err == ESP_OK) { backoff = 2; delay_seconds(2); }
+        else {
+            publish(STATE_FAILED);
+            ESP_LOGW(TAG, "Request failed: %s", esp_err_to_name(err));
+            unsigned wait = retry_after > backoff ? retry_after : backoff;
+            delay_seconds(wait);
+            vTaskDelay(pdMS_TO_TICKS(esp_random() % 1000));
+            if (backoff < 60) backoff = backoff > 30 ? 60 : backoff * 2;
+        }
     }
 }
 
-esp_err_t refresh_token(QueueHandle_t *evtQueueHandle)
+esp_err_t graph_client_init(QueueHandle_t *queue)
 {
-    unsigned int state = STATE_TOKEN_REFRESH;
-    xQueueSend(*evtQueueHandle, (void*) &state, 0);
-
-    esp_err_t err;
-    if(AUTH_CLIENT == NULL) {
-        while((err = init_auth_client()) != ESP_OK) {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
-    }
-    
-    // try to refresh using existing token
-    err = refresh_access_token();
-    while(err != ESP_OK)
-    {
-        // token not available, initiate auth flow
-        err = init_aad_auth_flow();
-        if(err != ESP_OK) {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        
-        err = fetch_token(NULL);
-        if(err != ESP_OK) {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-    }
-
-    state = STATE_TOKEN_RECEIVED;
-    xQueueSend(*evtQueueHandle, (void*) &state, 0);
-
-    esp_http_client_close(AUTH_CLIENT);
-    esp_http_client_cleanup(AUTH_CLIENT);
-    AUTH_CLIENT = NULL;
-
-    return ESP_OK;
-}
-
-esp_err_t graph_client_init(QueueHandle_t *evtQueueHandle)
-{
-    STATE_QUEUE_HANDLE = evtQueueHandle;
-    ESP_LOGI(AUTH_CLIENT_TAG, "initializing...");
-    refresh_token(evtQueueHandle);
-    xTaskCreate(poll_presence_task, "poll_presence_task", 15375, STATE_QUEUE_HANDLE, 5, NULL);
-    return ESP_OK;
+    if (!queue || !*queue || worker) return ESP_ERR_INVALID_ARG;
+    state_queue = *queue;
+    return xTaskCreate(poll_presence_task, "presence", 8192, NULL, 5, &worker) == pdPASS
+        ? ESP_OK : ESP_ERR_NO_MEM;
 }

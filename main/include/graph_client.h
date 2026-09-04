@@ -6,7 +6,6 @@
 #include "esp_system.h"
 
 esp_err_t graph_client_init(QueueHandle_t *queue);
-esp_err_t refresh_token(QueueHandle_t *queue);
 
 #define PRESENCE_AVAILABLE 0U
 #define PRESENCE_BUSY 1U

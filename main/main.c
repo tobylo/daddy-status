@@ -45,15 +45,16 @@ void presence_handler_task(void *pvParameters)
 
     ESP_LOGI(TAG, "Retrieve task started..");
     unsigned int presence = 1000;
-    for(;;) 
+    for(;;)
     {
-        if(xQueueReceive(*queue, &presence, portMAX_DELAY)) 
+        if(xQueueReceive(*queue, &presence, portMAX_DELAY))
         {
             ESP_LOGD(TAG, "received presence event");
             if(presence == current) {
                 ESP_LOGD(TAG, "daddy status unchanged..");
             } else if(presence != current) {
-                leds_clear();                
+                leds_clear();
+                current = presence;
                 ESP_LOGD(TAG, "daddy status changed..");
 
                 if(presence == STATE_TOKEN_REFRESH) {
@@ -100,11 +101,11 @@ void app_main(void)
 
     wifi_init();
     wifi_wait_connected();
-    
-    queue_init();
 
-    graph_client_init(&evt_queue);
-    xTaskCreate(presence_handler_task, "presence_handler_task", 8192, &evt_queue, 5, NULL);
+    ESP_ERROR_CHECK(queue_init());
+
+    ESP_ERROR_CHECK(xTaskCreate(presence_handler_task, "presence_handler_task", 4096, &evt_queue, 5, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(graph_client_init(&evt_queue));
 
     ESP_LOGI(TAG, "All initialized");
 }
