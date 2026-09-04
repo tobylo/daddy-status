@@ -53,3 +53,5 @@ refresh tokens are reused; obsolete stored access tokens are erased when tokens
 are updated. This does not enable flash encryption: physical flash protection
 requires separate device provisioning. Device-code login instructions appear on
 the serial monitor; token values and authorization headers are not logged.
+
+Presence polling defaults to 15 seconds and is configurable in `menuconfig`.

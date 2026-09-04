@@ -101,28 +101,6 @@ static esp_err_t request(const char *url, const char *form, const char *token,
     return err;
 }
 
-static esp_err_t token_read(char **token)
-{
-    *token = NULL;
-    nvs_handle_t handle;
-    esp_err_t err = nvs_open("graphapi", NVS_READONLY, &handle);
-    if (err != ESP_OK) return err;
-    size_t size = 0;
-    err = nvs_get_str(handle, "refresh_token", NULL, &size);
-    if (err == ESP_OK && (size < 2 || size > TOKEN_LIMIT + 1)) err = ESP_ERR_INVALID_SIZE;
-    if (err == ESP_OK) {
-        *token = calloc(size, 1);
-        if (!*token) err = ESP_ERR_NO_MEM;
-        else {
-            (*token)[0] = '\0';
-            err = nvs_get_str(handle, "refresh_token", *token, &size);
-        }
-    }
-    nvs_close(handle);
-    if (err != ESP_OK) { secret_free(*token); *token = NULL; }
-    return err;
-}
-
 static esp_err_t token_store(const char *token)
 {
     nvs_handle_t handle;
@@ -136,6 +114,32 @@ static esp_err_t token_store(const char *token)
     }
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
+    return err;
+}
+
+static esp_err_t token_read(char **token)
+{
+    *token = NULL;
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open("graphapi", NVS_READONLY, &handle);
+    if (err != ESP_OK) return err;
+    size_t size = 0;
+    err = nvs_get_str(handle, "refresh_token", NULL, &size);
+    if ((err == ESP_OK && (size < 2 || size > TOKEN_LIMIT + 1)) || err == ESP_ERR_NVS_TYPE_MISMATCH) {
+        nvs_close(handle);
+        err = token_store(NULL);
+        return err == ESP_OK ? ESP_ERR_NVS_NOT_FOUND : err;
+    }
+    if (err == ESP_OK) {
+        *token = calloc(size, 1);
+        if (!*token) err = ESP_ERR_NO_MEM;
+        else {
+            (*token)[0] = '\0';
+            err = nvs_get_str(handle, "refresh_token", *token, &size);
+        }
+    }
+    nvs_close(handle);
+    if (err != ESP_OK) { secret_free(*token); *token = NULL; }
     return err;
 }
 
@@ -335,7 +339,7 @@ static void poll_presence_task(void *unused)
         if (!access_token || esp_timer_get_time() >= access_deadline) {
             publish(STATE_TOKEN_REFRESH);
             err = refresh_access(&retry_after);
-            if (err == ESP_ERR_NVS_NOT_FOUND || err == ESP_ERR_INVALID_SIZE) err = device_login(&retry_after);
+            if (err == ESP_ERR_NVS_NOT_FOUND) err = device_login(&retry_after);
             if (err == ESP_OK) publish(STATE_TOKEN_RECEIVED);
         } else err = ESP_OK;
         if (err == ESP_OK) {
@@ -357,7 +361,7 @@ static void poll_presence_task(void *unused)
             }
             response_free(&response);
         }
-        if (err == ESP_OK) { backoff = 2; delay_seconds(2); }
+        if (err == ESP_OK) { backoff = 2; delay_seconds(CONFIG_PRESENCE_POLL_SECONDS); }
         else {
             publish(STATE_FAILED);
             ESP_LOGW(TAG, "Request failed: %s", esp_err_to_name(err));
