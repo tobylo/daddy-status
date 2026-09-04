@@ -42,13 +42,20 @@ static void json(void)
     assert(json_seconds(root, "expires_in", &seconds) && seconds == 3600);
     assert(!json_string(root, "expires_in") && !json_string(root, "missing"));
     cJSON_Delete(root);
-    const char *invalid[] = {"{", "[]", "null", "{}garbage", "{\"expires_in\":-1}", "{\"expires_in\":1.5}", "{\"expires_in\":1e999}"};
+    const char *invalid[] = {"{",
+                             "[]",
+                             "null",
+                             "{}garbage",
+                             "{\"expires_in\":-1}",
+                             "{\"expires_in\":1.5}",
+                             "{\"expires_in\":1e999}"};
     for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
         buffer.length = 0;
         assert(response_append(&buffer, invalid[i], strlen(invalid[i])));
         root = response_json(&buffer);
         assert(!json_seconds(root, "expires_in", &seconds));
-        if (i < 4) assert(!root);
+        if (i < 4)
+            assert(!root);
         cJSON_Delete(root);
     }
     buffer.length = 0;
@@ -58,9 +65,30 @@ static void json(void)
 
 int main(void)
 {
-    buffers(); encoding(); json();
+    buffers();
+    encoding();
+    json();
+    assert(guid_valid("01234567-89ab-cdef-0123-456789abcdef"));
+    assert(!guid_valid(NULL) && !guid_valid("GUID") &&
+           !guid_valid("01234567/89ab-cdef-0123-456789abcdef"));
+    assert(bearer_token_valid("AbC-._~+/=123"));
+    assert(!bearer_token_valid("a b") && !bearer_token_valid("a\r\nheader") &&
+           !bearer_token_valid(""));
+    char nested[256] = "{\"nested\":";
+    for (unsigned i = 0; i < 32; ++i)
+        strcat(nested, "[");
+    strcat(nested, "0");
+    for (unsigned i = 0; i < 32; ++i)
+        strcat(nested, "]");
+    strcat(nested, "}");
+    response_buffer_t deep = {nested, sizeof(nested), strlen(nested), false};
+    assert(!response_json(&deep));
     assert(retry_after_seconds("30") == 30);
-    assert(retry_after_seconds("99999999999999999") == 3600);
+    assert(retry_after_seconds("7200") == 7200);
+    assert(retry_after_seconds("86400") == 86400);
+    assert(retry_after_seconds("86401") == MAX_RETRY_AFTER_SECONDS);
+    assert(retry_after_seconds("4294967295") == MAX_RETRY_AFTER_SECONDS);
+    assert(retry_after_seconds("99999999999999999") == MAX_RETRY_AFTER_SECONDS);
     assert(retry_after_seconds("garbage") == 0);
     assert(retry_after_seconds("999999999x") == 0);
     assert(retry_after_seconds("-1") == 0);

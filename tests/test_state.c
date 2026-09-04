@@ -11,14 +11,17 @@ int main(void)
     assert(app_display_mode(&status, true, 0, ttl) == DISPLAY_UNKNOWN);
     status.service = SERVICE_AUTHENTICATING;
     assert(app_display_mode(&status, true, 0, ttl) == DISPLAY_AUTHENTICATING);
-    status.has_presence = true; status.presence = PRESENCE_DO_NOT_DISTURB; status.updated_at_us = 100;
+    status.has_presence = true;
+    status.presence = PRESENCE_DO_NOT_DISTURB;
+    status.updated_at_us = 100;
     assert(app_display_mode(&status, true, 100, ttl) == DISPLAY_DO_NOT_DISTURB);
     status.service = SERVICE_ERROR;
     assert(app_display_mode(&status, true, ttl + 99, ttl) == DISPLAY_DO_NOT_DISTURB);
     assert(app_display_mode(&status, true, ttl + 100, ttl) == DISPLAY_UNKNOWN);
     assert(app_display_mode(&status, false, 100, ttl) == DISPLAY_CONNECTING);
     assert(app_display_mode(&status, true, 99, ttl) == DISPLAY_UNKNOWN);
-    status.updated_at_us = ttl + 100; status.service = SERVICE_READY;
+    status.updated_at_us = ttl + 100;
+    status.service = SERVICE_READY;
     assert(app_display_mode(&status, true, ttl + 101, ttl) == DISPLAY_DO_NOT_DISTURB);
     const presence_t presences[] = {PRESENCE_AVAILABLE, PRESENCE_BUSY, PRESENCE_OFF_WORK};
     const display_mode_t modes[] = {DISPLAY_AVAILABLE, DISPLAY_BUSY, DISPLAY_PLAY};
@@ -36,7 +39,8 @@ int main(void)
     assert(led_frame(DISPLAY_DO_NOT_DISTURB, 1500, 100, frame) && frame[1].red == 180);
     assert(led_frame(DISPLAY_BUSY, 1000, 100, frame) && frame[0].red == 255 && frame[1].red == 0);
     assert(led_frame(DISPLAY_AVAILABLE, 0, 50, frame) && frame[0].green == 70);
-    assert(led_frame(DISPLAY_UNKNOWN, 0, 100, frame) && frame[0].blue == 140 && frame[0].green == 0);
+    assert(led_frame(DISPLAY_UNKNOWN, 0, 100, frame) && frame[0].blue == 140 &&
+           frame[0].green == 0);
     assert(led_frame(DISPLAY_PLAY, 0, 100, frame) && frame[0].red == 76);
     assert(led_frame(DISPLAY_PLAY, 1800, 100, frame) && frame[0].green == 76);
     assert(led_frame(DISPLAY_PLAY, 3600, 100, frame) && frame[0].blue == 76);

@@ -1,8 +1,8 @@
 #ifndef DADDY_APP_STATE_H
 #define DADDY_APP_STATE_H
+#include "presence.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "presence.h"
 
 typedef enum {
     SERVICE_CONNECTING,
@@ -33,6 +33,6 @@ typedef enum {
     DISPLAY_MODE_COUNT,
 } display_mode_t;
 
-display_mode_t app_display_mode(const app_status_t *status, bool connected,
-                                int64_t now_us, int64_t stale_after_us);
+display_mode_t app_display_mode(const app_status_t *status, bool connected, int64_t now_us,
+                                int64_t stale_after_us);
 #endif

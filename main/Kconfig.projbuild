@@ -1,5 +1,13 @@
 menu "Daddy Status"
 
+    config NTP_SERVER
+        string "NTP server for TLS clock synchronization"
+        default "pool.ntp.org"
+
+    config STATUS_DIAGNOSTICS
+        bool "Log heap and task stack diagnostics"
+        default n
+
     config PRESENCE_POLL_SECONDS
         int "Presence polling interval (seconds)"
         range 2 300
@@ -18,19 +26,20 @@ menu "Daddy Status"
 
         config LED_DATA_GPIO
             int "Data GPIO pin number"
+            range 0 33
             default 25
             help
                 GPIO number of data to LED array
     endmenu
 
-    menu "Azure AD"
+    menu "Microsoft Entra ID"
         config AAD_TENANT_ID
             string "Tenant ID that the Graph API belongs to"
-            default "GUID"
+            default ""
         
         config AAD_CLIENT_ID
             string "Client ID of the app with the permissions to fetch presence"
-            default "GUID"
+            default ""
     endmenu
 
 endmenu
@@ -39,18 +48,19 @@ menu "WiFi setup"
 
     config WIFI_SSID
         string "WiFi SSID"
-        default "myssid"
+        default ""
         help
-            SSID (network name) for the example to connect to.
+            SSID of the 2.4 GHz network to connect to.
 
     config WIFI_PASSWORD
         string "WiFi Password"
-        default "mypassword"
+        default ""
         help
-            WiFi password (WPA or WPA2) for the example to use.
+            Wi-Fi password. Leave empty only for an open network.
 
     config WIFI_LISTEN_INTERVAL
         int "WiFi listen interval"
+        range 1 100
         default 3
         help
             Interval for station to listen to beacon from AP. The unit of listen interval is one beacon interval.

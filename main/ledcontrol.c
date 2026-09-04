@@ -1,12 +1,14 @@
 #include "ledcontrol.h"
+#include "diagnostics.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include "led_frame.h"
 #include "led_strip.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include "esp_timer.h"
-#include "esp_log.h"
 #include "sdkconfig.h"
+#include "task_time.h"
 #include <string.h>
 
 static const char *TAG = "leds";
@@ -17,7 +19,8 @@ static esp_err_t render(const led_rgb_t frame[STATUS_LED_COUNT])
 {
     for (unsigned i = 0; i < STATUS_LED_COUNT; ++i) {
         esp_err_t err = led_strip_set_pixel(strip, i, frame[i].red, frame[i].green, frame[i].blue);
-        if (err != ESP_OK) return err;
+        if (err != ESP_OK)
+            return err;
     }
     return led_strip_refresh(strip);
 }
@@ -29,7 +32,9 @@ static void led_task(void *unused)
     int64_t started = esp_timer_get_time();
     led_rgb_t previous[STATUS_LED_COUNT] = {0};
     bool rendered = false, failed = false;
+    int64_t last_diagnostic = 0;
     for (;;) {
+        diagnostics_sample("leds", &last_diagnostic);
         led_rgb_t frame[STATUS_LED_COUNT];
         uint64_t elapsed_ms = (esp_timer_get_time() - started) / 1000;
         if (led_frame(mode, elapsed_ms, CONFIG_LED_BRIGHTNESS_PERCENT, frame) &&
@@ -38,17 +43,18 @@ static void led_task(void *unused)
             if (err == ESP_OK) {
                 memcpy(previous, frame, sizeof(frame));
                 rendered = true;
-                if (failed) ESP_LOGI(TAG, "LED output recovered");
+                if (failed)
+                    ESP_LOGI(TAG, "LED output recovered");
                 failed = false;
             } else {
-                if (!failed) ESP_LOGE(TAG, "LED output failed: %s; retrying", esp_err_to_name(err));
+                if (!failed)
+                    ESP_LOGE(TAG, "LED output failed: %s; retrying", esp_err_to_name(err));
                 failed = true;
                 rendered = false;
             }
         }
-        TickType_t wait = failed ? pdMS_TO_TICKS(250) :
-            (led_mode_animated(mode) ? pdMS_TO_TICKS(15) : portMAX_DELAY);
-        if (!wait) wait = 1; /* Short delays must still yield with coarse RTOS ticks. */
+        TickType_t wait = failed ? task_ticks_ms(250)
+                                 : (led_mode_animated(mode) ? task_ticks_ms(15) : portMAX_DELAY);
         display_mode_t next;
         if (xQueueReceive(mode_queue, &next, wait) == pdTRUE && next != mode) {
             mode = next;
@@ -60,9 +66,11 @@ static void led_task(void *unused)
 
 esp_err_t leds_init(void)
 {
-    if (mode_queue) return ESP_ERR_INVALID_STATE;
+    if (mode_queue)
+        return ESP_ERR_INVALID_STATE;
     mode_queue = xQueueCreate(1, sizeof(display_mode_t));
-    if (!mode_queue) return ESP_ERR_NO_MEM;
+    if (!mode_queue)
+        return ESP_ERR_NO_MEM;
     const led_strip_config_t config = {
         .strip_gpio_num = CONFIG_LED_DATA_GPIO,
         .max_leds = STATUS_LED_COUNT,
@@ -84,7 +92,9 @@ esp_err_t leds_init(void)
 
 esp_err_t leds_set_mode(display_mode_t mode)
 {
-    if (mode < 0 || mode >= DISPLAY_MODE_COUNT) return ESP_ERR_INVALID_ARG;
-    if (!mode_queue) return ESP_ERR_INVALID_STATE;
+    if (mode < 0 || mode >= DISPLAY_MODE_COUNT)
+        return ESP_ERR_INVALID_ARG;
+    if (!mode_queue)
+        return ESP_ERR_INVALID_STATE;
     return xQueueOverwrite(mode_queue, &mode) == pdPASS ? ESP_OK : ESP_FAIL;
 }
