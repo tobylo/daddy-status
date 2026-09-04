@@ -38,3 +38,20 @@ account. `sdkconfig` is ignored because it contains your Wi-Fi password. Keep
 firmware images and build output private when built with real credentials.
 The old GNU Make build is no longer supported. See
 [the staged refactoring plan](docs/refactoring-plan.md) for remaining work.
+
+## Automated checks
+
+After `idf.py build` downloads the pinned cJSON component, run `tests/run.sh`
+with a host C compiler. It checks response chunk assembly, exact buffer limits,
+form encoding, malformed JSON, and retry headers under AddressSanitizer and
+UndefinedBehaviorSanitizer. CI runs these checks after compiling the firmware.
+
+HTTPS uses the ESP-IDF CA bundle and waits for SNTP clock synchronization. The
+network must permit DNS, NTP, and HTTPS to Microsoft. Access tokens remain in
+RAM; refresh tokens persist in the `graphapi` NVS namespace. Existing stored
+refresh tokens are reused; obsolete stored access tokens are erased when tokens
+are updated. This does not enable flash encryption: physical flash protection
+requires separate device provisioning. Device-code login instructions appear on
+the serial monitor; token values and authorization headers are not logged.
+
+Presence polling defaults to 15 seconds and is configurable in `menuconfig`.

@@ -1,5 +1,10 @@
 menu "Daddy Status"
 
+    config PRESENCE_POLL_SECONDS
+        int "Presence polling interval (seconds)"
+        range 2 300
+        default 15
+
     menu "LEDs"
         config LED_DATA_GPIO
             int "Data GPIO pin number"
