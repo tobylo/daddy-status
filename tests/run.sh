@@ -17,3 +17,7 @@ cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined 
     main/auth_client.c main/token_storage.c main/presence.c main/protocol.c "$CJSON/cJSON.c" \
     -lm -o "$TEST_BUILD/test_auth"
 "$TEST_BUILD/test_auth"
+cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+    -Imain/include -I"$CJSON" tests/test_state.c main/app_state.c main/led_frame.c \
+    -o "$TEST_BUILD/test_state"
+"$TEST_BUILD/test_state"

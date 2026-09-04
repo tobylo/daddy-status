@@ -54,3 +54,20 @@ requires separate device provisioning. Device-code login instructions appear on
 the serial monitor; token values and authorization headers are not logged.
 
 Presence polling defaults to 15 seconds and is configurable in `menuconfig`.
+
+## Status lights
+
+| Display | Meaning |
+| --- | --- |
+| Green | Available (also away/idle, preserving the original mapping) |
+| One yellow LED | Busy |
+| Blinking red | Do not disturb, meeting, call, or presenting |
+| Rainbow | Off work/offline/out of office |
+| Blinking yellow | Initial authentication in progress; check serial monitor |
+| Blinking blue | Connecting, synchronizing clock, unknown, or stale presence |
+| Solid magenta | Invalid application configuration; check serial monitor |
+
+The default stale timeout is 60 seconds, configurable in `menuconfig` and required
+to exceed the polling interval. Temporary service errors preserve the last known
+presence until then; Wi-Fi disconnection shows blue immediately. Brightness is
+configurable. Rainbow uses the originally intended 30% intensity.
