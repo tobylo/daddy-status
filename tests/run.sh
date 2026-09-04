@@ -12,3 +12,8 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
     -Imain/include -I"$CJSON" tests/test_protocol.c main/protocol.c "$CJSON/cJSON.c" \
     -lm -o "$TEST_BUILD/test_protocol"
 "$TEST_BUILD/test_protocol"
+cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+    -Itests/fakes -Imain/include -I"$CJSON" tests/test_auth.c \
+    main/auth_client.c main/token_storage.c main/presence.c main/protocol.c "$CJSON/cJSON.c" \
+    -lm -o "$TEST_BUILD/test_auth"
+"$TEST_BUILD/test_auth"
