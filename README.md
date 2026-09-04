@@ -106,7 +106,9 @@ project's behavior and are centralized in `main/presence.c`.
 
 - **Blue at startup:** check Wi-Fi and NTP access. If the clock is synchronized,
   check Microsoft connectivity and serial logs. Reconnects and transient requests
-  retry with backoff; numeric `Retry-After` values are respected.
+  retry with backoff; numeric `Retry-After` values are respected up to a 24-hour
+  operational maximum. Larger values are capped to prevent an effectively
+  permanent pause.
 - **Yellow:** finish device login on the serial monitor. Expired/denied device
   codes finish that attempt; the worker can start another attempt after backoff.
 - **Magenta:** correct missing/invalid IDs, Wi-Fi SSID, NTP server, or polling/stale

@@ -1,6 +1,5 @@
 #include "protocol.h"
 #include <assert.h>
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,7 +85,10 @@ int main(void)
     assert(!response_json(&deep));
     assert(retry_after_seconds("30") == 30);
     assert(retry_after_seconds("7200") == 7200);
-    assert(retry_after_seconds("99999999999999999") == UINT_MAX);
+    assert(retry_after_seconds("86400") == 86400);
+    assert(retry_after_seconds("86401") == MAX_RETRY_AFTER_SECONDS);
+    assert(retry_after_seconds("4294967295") == MAX_RETRY_AFTER_SECONDS);
+    assert(retry_after_seconds("99999999999999999") == MAX_RETRY_AFTER_SECONDS);
     assert(retry_after_seconds("garbage") == 0);
     assert(retry_after_seconds("999999999x") == 0);
     assert(retry_after_seconds("-1") == 0);

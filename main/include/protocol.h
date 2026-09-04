@@ -6,6 +6,8 @@
 #include <stddef.h>
 
 #define TOKEN_LIMIT 8192
+/* Operational ceiling: retain multi-hour throttling without effectively disabling polling. */
+#define MAX_RETRY_AFTER_SECONDS (24U * 60U * 60U)
 
 typedef struct {
     char *data;

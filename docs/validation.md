@@ -8,7 +8,7 @@ They compile production code, with fakes only at hardware/network boundaries.
 
 | Suite | Coverage |
 | --- | --- |
-| Protocol | Split/exact-limit/oversized buffers, encoding, malformed and deeply nested JSON, typed fields, retry headers, IDs and bearer tokens |
+| Protocol | Split/exact-limit/oversized buffers, encoding, malformed and deeply nested JSON, typed fields, retry headers including the 24-hour operational ceiling, IDs and bearer tokens |
 | Authentication/storage | Device pending/slowdown, expiry, refresh/rotation, missing and invalid NVS, storage errors, revocation, throttling, truncated response without forced login |
 | State/frames | Freshness boundaries, recovery, disconnect/config priority, unknown activities, blink phases, brightness and rainbow |
 | LED worker | Initialization cleanup, latest-mode queue behavior, failed-output retry, one task across mode changes, coarse RTOS ticks |

@@ -91,7 +91,7 @@ unsigned retry_after_seconds(const char *value)
         unsigned digit = (unsigned)(*p - '0');
         seconds = seconds > (UINT_MAX - digit) / 10 ? UINT_MAX : seconds * 10 + digit;
     }
-    return seconds;
+    return seconds > MAX_RETRY_AFTER_SECONDS ? MAX_RETRY_AFTER_SECONDS : seconds;
 }
 
 void secret_free(char *secret)
