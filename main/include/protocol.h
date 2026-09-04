@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include "cJSON.h"
 
+#define TOKEN_LIMIT 8192
+
 typedef struct {
     char *data;
     size_t capacity; /* Includes the terminating null byte. */

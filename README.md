@@ -17,8 +17,7 @@ Hardware required:
 
 Espressif managed `led_strip` component (replaces the original Lucas Bruder driver).
 
-encode_uri by David Farrell
-https://github.com/dnmfarrell/URI-Encode-C
+Form encoding is implemented locally with bounded allocation and byte-wise writes.
 
 ## Build (ESP-IDF 6.1)
 

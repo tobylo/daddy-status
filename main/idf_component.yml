@@ -1,4 +1,6 @@
 dependencies:
   idf: "==6.1.0"
   espressif/led_strip: "3.0.3"
-  espressif/cjson: "1.7.19"
+  espressif/cjson:
+    version: "1.7.19"
+    public: true
