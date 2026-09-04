@@ -50,6 +50,31 @@ const uint8_t hsv_lookup[121] = {
     246, 249, 251, 253, 255
 };
 
+/* A persistent peripheral failure is fatal; do not leave an infinite retry loop. */
+static void pixel_checked(int index, const struct led_color_t *color)
+{
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        err = led_strip_set_pixel(strip, index, color->red, color->green, color->blue);
+        if (err == ESP_OK) return;
+        ESP_LOGW(TAG, "LED pixel update failed: %s", esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+static void strip_checked(bool clear)
+{
+    esp_err_t err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        err = clear ? led_strip_clear(strip) : led_strip_refresh(strip);
+        if (err == ESP_OK) return;
+        ESP_LOGW(TAG, "LED output failed: %s", esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    ESP_ERROR_CHECK(err);
+}
+
 static void hsv_angle_to_rgb(int angle, struct led_color_t *color, float intensity)
 {
     if (angle < 120)
@@ -82,9 +107,9 @@ static void leds_rainbow_task(void *pvParameters)
         {
             hsv_angle_to_rgb(k, &color, 0.3);
             for (int i = 0; i < LED_STRIP_LENGTH; i++) {
-                led_strip_set_pixel(strip, i, color.red, color.green, color.blue);
+                pixel_checked(i, &color);
             }
-            led_strip_refresh(strip);
+            strip_checked(false);
             vTaskDelay(15 / portTICK_PERIOD_MS);
         }
     }   
@@ -108,13 +133,13 @@ void leds_blink_task(void *pvParameters)
     for(;;)
     {
         for (int i = 0; i < LED_STRIP_LENGTH; i++) {
-            led_strip_set_pixel(strip, i, DESIRED_COLORS[i]->red, DESIRED_COLORS[i]->green, DESIRED_COLORS[i]->blue);
+            pixel_checked(i, DESIRED_COLORS[i]);
         }
-        led_strip_refresh(strip);
+        strip_checked(false);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
         
-        led_strip_clear(strip);
-        led_strip_refresh(strip);
+        strip_checked(true);
+        strip_checked(false);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
     }
 }
@@ -124,7 +149,7 @@ void leds_clear(void)
     ESP_LOGD(TAG, "called: leds_clear");
 
     leds_helper_stop_task();
-    led_strip_clear(strip);
+    strip_checked(true);
     for (int i = 0; i < LED_STRIP_LENGTH; i++) {
         DESIRED_COLORS[i] = &LED_COLOR_OFF;
     }
@@ -158,23 +183,21 @@ void led_color(int led_index, struct led_color_t *color)
     }
 
     DESIRED_COLORS[led_index] = color;
-    while(led_strip_set_pixel(strip, led_index, color->red, color->green, color->blue) != ESP_OK) {
-        ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
+    pixel_checked(led_index, color);
 }
 
 void leds_color(struct led_color_t *color)
 {
     ESP_LOGD(TAG, "called: leds_color");
+    if (color == NULL) {
+        ESP_LOGE(TAG, "Null LED color");
+        return;
+    }
 
     for (int i = 0; i < LED_STRIP_LENGTH; i++)
     {
         DESIRED_COLORS[i] = color;
-        while(led_strip_set_pixel(strip, i, DESIRED_COLORS[i]->red, DESIRED_COLORS[i]->green, DESIRED_COLORS[i]->blue) != ESP_OK) {
-            ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-        }
+        pixel_checked(i, color);
     }
 }
 
@@ -190,11 +213,8 @@ void leds_apply(bool flash)
     if(flash) {
         xTaskCreate(leds_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
     } else {
-        while(led_strip_refresh(strip) != ESP_OK) {
-            ESP_LOGE(TAG, "leds_apply: failed, retrying..");
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-        }
-        
+        strip_checked(false);
+
         // add delay to give the leds a change to update
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
