@@ -32,7 +32,7 @@ BaseType_t xQueueOverwrite(QueueHandle_t q, const void *item)
 }
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
 {
-    assert(q == &queue && queue.allocated);
+    assert(q == &queue && queue.allocated && wait > 0);
     if (!queue.pending) {
         switch (event_step++) {
             case 0:
@@ -41,8 +41,8 @@ BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
                 assert(leds_set_mode(DISPLAY_BUSY) == ESP_OK);
                 break;
             case 1:
-                assert(refreshes == 3 && wait == 250); /* Retry the failed output. */
-                now += (int64_t)wait * 1000;
+                assert(refreshes == 3 && wait == (pdMS_TO_TICKS(250) ? pdMS_TO_TICKS(250) : 1)); /* Retry the failed output. */
+                now += (int64_t)wait * 1000000 / TEST_FREERTOS_HZ;
                 return pdFALSE;
             case 2:
                 assert(refreshes == 4 && wait == portMAX_DELAY);

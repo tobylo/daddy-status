@@ -29,9 +29,11 @@ void app_main(void)
     ESP_ERROR_CHECK(graph_client_init(queue));
     app_status_t status = {.service = SERVICE_CONNECTING, .presence = PRESENCE_UNKNOWN};
     display_mode_t previous = DISPLAY_MODE_COUNT;
+    TickType_t refresh_ticks = pdMS_TO_TICKS(100);
+    if (!refresh_ticks) refresh_ticks = 1;
     for (;;) {
         app_status_t received;
-        if (xQueueReceive(queue, &received, pdMS_TO_TICKS(100)) == pdTRUE) status = received;
+        if (xQueueReceive(queue, &received, refresh_ticks) == pdTRUE) status = received;
         display_mode_t mode = app_display_mode(&status, wifi_is_connected(), esp_timer_get_time(),
                                               (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000);
         if (mode != previous) {

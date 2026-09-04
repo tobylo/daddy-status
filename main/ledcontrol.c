@@ -48,6 +48,7 @@ static void led_task(void *unused)
         }
         TickType_t wait = failed ? pdMS_TO_TICKS(250) :
             (led_mode_animated(mode) ? pdMS_TO_TICKS(15) : portMAX_DELAY);
+        if (!wait) wait = 1; /* Short delays must still yield with coarse RTOS ticks. */
         display_mode_t next;
         if (xQueueReceive(mode_queue, &next, wait) == pdTRUE && next != mode) {
             mode = next;

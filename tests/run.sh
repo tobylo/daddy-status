@@ -25,3 +25,7 @@ cc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -g -fsanitize=address,un
     -Itests/fakes -Imain/include -I"$CJSON" tests/test_led_worker.c main/ledcontrol.c main/led_frame.c \
     -o "$TEST_BUILD/test_led_worker"
 "$TEST_BUILD/test_led_worker"
+cc -DTEST_FREERTOS_HZ=1 -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -g -fsanitize=address,undefined \
+    -Itests/fakes -Imain/include -I"$CJSON" tests/test_led_worker.c main/ledcontrol.c main/led_frame.c \
+    -o "$TEST_BUILD/test_led_coarse_ticks"
+"$TEST_BUILD/test_led_coarse_ticks"

@@ -9,5 +9,8 @@ typedef void *TaskHandle_t;
 #define pdPASS 1
 #define pdFAIL 0
 #define portMAX_DELAY UINT32_MAX
-#define pdMS_TO_TICKS(ms) (ms)
+#ifndef TEST_FREERTOS_HZ
+#define TEST_FREERTOS_HZ 1000
+#endif
+#define pdMS_TO_TICKS(ms) ((TickType_t)(((uint64_t)(ms) * TEST_FREERTOS_HZ) / 1000))
 #endif
