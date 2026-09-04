@@ -5,7 +5,17 @@ menu "Daddy Status"
         range 2 300
         default 15
 
+    config PRESENCE_STALE_SECONDS
+        int "Mark presence stale after (seconds; must exceed polling interval)"
+        range 30 3600
+        default 60
+
     menu "LEDs"
+        config LED_BRIGHTNESS_PERCENT
+            int "LED brightness (percent)"
+            range 1 100
+            default 100
+
         config LED_DATA_GPIO
             int "Data GPIO pin number"
             default 25

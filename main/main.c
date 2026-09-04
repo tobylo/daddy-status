@@ -1,111 +1,45 @@
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/queue.h"
-#include "esp_system.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "sdkconfig.h"
 #include "ledcontrol.h"
 #include "nvs_flash.h"
 #include "wifi.h"
 #include "graph_client.h"
 
-#define ESP_INTR_FLAG_DEFAULT 0
-
-static const char* TAG = "main";
-static QueueHandle_t evt_queue = NULL;
-static unsigned int current = 1000;
-
-esp_err_t nvs_init(void)
+static void nvs_init(void)
 {
-    // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGE(TAG, "no nvs pages or new version found, erasing flash");
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW("main", "NVS requires reinitialization; saved authorization will be erased");
         ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+        err = nvs_flash_init();
     }
-    ESP_ERROR_CHECK( ret );
-    return ret;
-}
-
-esp_err_t queue_init(void)
-{
-    evt_queue = xQueueCreate(2, sizeof(uint32_t));
-    if(evt_queue != NULL) {
-        return ESP_OK;
-    } else {
-        return ESP_FAIL;
-    }
-}
-
-void presence_handler_task(void *pvParameters)
-{
-    QueueHandle_t *queue = pvParameters;
-
-    ESP_LOGI(TAG, "Retrieve task started..");
-    unsigned int presence = 1000;
-    for(;;)
-    {
-        if(xQueueReceive(*queue, &presence, portMAX_DELAY))
-        {
-            ESP_LOGD(TAG, "received presence event");
-            if(presence == current) {
-                ESP_LOGD(TAG, "daddy status unchanged..");
-            } else if(presence != current) {
-                leds_clear();
-                current = presence;
-                ESP_LOGD(TAG, "daddy status changed..");
-
-                if(presence == STATE_TOKEN_REFRESH) {
-                    ESP_LOGD(TAG, "Refreshing token");
-                    current = presence;
-                    leds_color(&LED_COLOR_YELLOW);
-                    leds_apply(true);
-                } else if(presence == STATE_TOKEN_RECEIVED) {
-                    ESP_LOGD(TAG, "Token received, fetching presence");
-                    current = presence;
-                    leds_color(&LED_COLOR_GREEN);
-                    leds_apply(true);
-                } else if(presence == PRESENCE_OFF_WORK) {
-                    ESP_LOGD(TAG, "Daddy status: play time");
-                    current = presence;
-                    leds_rainbow();
-                } else if(presence == PRESENCE_DO_NOT_DISTURB) {
-                    ESP_LOGD(TAG, "daddy status: DND");
-                    current = presence;
-                    leds_color(&LED_COLOR_RED);
-                    leds_apply(true);
-                } else if(presence == PRESENCE_AVAILABLE) {
-                    ESP_LOGD(TAG, "daddy status: available");
-                    current = presence;
-                    leds_color(&LED_COLOR_GREEN);
-                    leds_apply(false);
-                } else if(presence == PRESENCE_BUSY) {
-                    ESP_LOGD(TAG, "daddy status: busy");
-                    current = presence;
-                    led_color(0, &LED_COLOR_YELLOW);
-                    led_color(1, &LED_COLOR_OFF);
-                    leds_apply(false);
-                }
-            }
-        }
-    }
+    ESP_ERROR_CHECK(err);
 }
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(leds_init() ? ESP_OK : ESP_FAIL);
-
+    ESP_ERROR_CHECK(leds_init());
     nvs_init();
-
+    QueueHandle_t queue = xQueueCreate(1, sizeof(app_status_t));
+    ESP_ERROR_CHECK(queue ? ESP_OK : ESP_ERR_NO_MEM);
     wifi_init();
-    wifi_wait_connected();
-
-    ESP_ERROR_CHECK(queue_init());
-
-    ESP_ERROR_CHECK(xTaskCreate(presence_handler_task, "presence_handler_task", 4096, &evt_queue, 5, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(graph_client_init(&evt_queue));
-
-    ESP_LOGI(TAG, "All initialized");
+    ESP_ERROR_CHECK(graph_client_init(queue));
+    app_status_t status = {.service = SERVICE_CONNECTING, .presence = PRESENCE_UNKNOWN};
+    display_mode_t previous = DISPLAY_MODE_COUNT;
+    TickType_t refresh_ticks = pdMS_TO_TICKS(100);
+    if (!refresh_ticks) refresh_ticks = 1;
+    for (;;) {
+        app_status_t received;
+        if (xQueueReceive(queue, &received, refresh_ticks) == pdTRUE) status = received;
+        display_mode_t mode = app_display_mode(&status, wifi_is_connected(), esp_timer_get_time(),
+                                              (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000);
+        if (mode != previous) {
+            ESP_ERROR_CHECK(leds_set_mode(mode));
+            ESP_LOGI("main", "Display mode: %d", (int)mode);
+            previous = mode;
+        }
+    }
 }

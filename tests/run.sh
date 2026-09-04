@@ -17,3 +17,15 @@ cc -D_GNU_SOURCE -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined 
     main/auth_client.c main/token_storage.c main/presence.c main/protocol.c "$CJSON/cJSON.c" \
     -lm -o "$TEST_BUILD/test_auth"
 "$TEST_BUILD/test_auth"
+cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+    -Imain/include -I"$CJSON" tests/test_state.c main/app_state.c main/led_frame.c \
+    -o "$TEST_BUILD/test_state"
+"$TEST_BUILD/test_state"
+cc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -g -fsanitize=address,undefined \
+    -Itests/fakes -Imain/include -I"$CJSON" tests/test_led_worker.c main/ledcontrol.c main/led_frame.c \
+    -o "$TEST_BUILD/test_led_worker"
+"$TEST_BUILD/test_led_worker"
+cc -DTEST_FREERTOS_HZ=1 -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -g -fsanitize=address,undefined \
+    -Itests/fakes -Imain/include -I"$CJSON" tests/test_led_worker.c main/ledcontrol.c main/led_frame.c \
+    -o "$TEST_BUILD/test_led_coarse_ticks"
+"$TEST_BUILD/test_led_coarse_ticks"
