@@ -21,3 +21,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
     -Imain/include -I"$CJSON" tests/test_state.c main/app_state.c main/led_frame.c \
     -o "$TEST_BUILD/test_state"
 "$TEST_BUILD/test_state"
+cc -std=c11 -Wall -Wextra -Werror -Wno-unused-parameter -g -fsanitize=address,undefined \
+    -Itests/fakes -Imain/include -I"$CJSON" tests/test_led_worker.c main/ledcontrol.c main/led_frame.c \
+    -o "$TEST_BUILD/test_led_worker"
+"$TEST_BUILD/test_led_worker"

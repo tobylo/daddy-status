@@ -41,3 +41,7 @@ Reconnect attempts have a 1–30 second backoff. Connection loss is visible with
 the display loop interval. Temporary HTTP/authentication failures preserve a fresh
 presence until its configured timeout, then show unknown. Successful token
 refresh alone never means "available".
+
+The LED worker is also compiled against fake queue and driver interfaces to test
+initialization cleanup, latest-mode delivery, retry after output failure, and
+mode changes within the same task. This checks control flow, not RTOS scheduling.
