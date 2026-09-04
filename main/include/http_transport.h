@@ -1,7 +1,7 @@
 #ifndef DADDY_HTTP_TRANSPORT_H
 #define DADDY_HTTP_TRANSPORT_H
-#include "protocol.h"
 #include "esp_err.h"
+#include "protocol.h"
 
 typedef struct {
     response_buffer_t body;

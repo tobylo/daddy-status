@@ -1,9 +1,9 @@
 #ifndef DADDY_PROTOCOL_H
 #define DADDY_PROTOCOL_H
 
+#include "cJSON.h"
 #include <stdbool.h>
 #include <stddef.h>
-#include "cJSON.h"
 
 #define TOKEN_LIMIT 8192
 
@@ -21,5 +21,7 @@ const char *json_string(const cJSON *root, const char *key);
 bool json_seconds(const cJSON *root, const char *key, unsigned *value);
 unsigned retry_after_seconds(const char *value);
 void secret_free(char *secret);
+bool guid_valid(const char *value);
+bool bearer_token_valid(const char *token);
 
 #endif

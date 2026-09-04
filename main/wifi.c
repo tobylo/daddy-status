@@ -1,11 +1,11 @@
 #include "wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "esp_wifi.h"
-#include "esp_log.h"
-#include "esp_event.h"
-#include "esp_netif.h"
 
 static EventGroupHandle_t wifi_events;
 static TaskHandle_t reconnect_task;
@@ -19,7 +19,8 @@ static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *da
                (id == WIFI_EVENT_STA_START || id == WIFI_EVENT_STA_DISCONNECTED)) {
         xEventGroupClearBits(wifi_events, CONNECTED_BIT);
     }
-    if (reconnect_task) xTaskNotifyGive(reconnect_task);
+    if (reconnect_task)
+        xTaskNotifyGive(reconnect_task);
 }
 
 static void reconnect(void *unused)
@@ -32,10 +33,12 @@ static void reconnect(void *unused)
             continue;
         }
         esp_err_t err = esp_wifi_connect();
-        if (err != ESP_OK) ESP_LOGW("wifi", "Connect attempt failed: %s", esp_err_to_name(err));
+        if (err != ESP_OK)
+            ESP_LOGW("wifi", "Connect attempt failed: %s", esp_err_to_name(err));
         /* Notifications update connection state; an early failure must not bypass backoff. */
         vTaskDelay(pdMS_TO_TICKS(backoff * 1000));
-        if (backoff < 30) backoff = backoff > 15 ? 30 : backoff * 2;
+        if (backoff < 30)
+            backoff = backoff > 15 ? 30 : backoff * 2;
     }
 }
 
@@ -52,15 +55,17 @@ void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     wifi_config_t config = {.sta = {
-        .ssid = CONFIG_WIFI_SSID,
-        .password = CONFIG_WIFI_PASSWORD,
-        .listen_interval = CONFIG_WIFI_LISTEN_INTERVAL,
-    }};
+                                .ssid = CONFIG_WIFI_SSID,
+                                .password = CONFIG_WIFI_PASSWORD,
+                                .listen_interval = CONFIG_WIFI_LISTEN_INTERVAL,
+                            }};
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(xTaskCreate(reconnect, "wifi_reconnect", 3072, NULL, 4, &reconnect_task) == pdPASS
-                    ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreate(reconnect, "wifi_reconnect", 3072, NULL, 4, &reconnect_task) ==
+                            pdPASS
+                        ? ESP_OK
+                        : ESP_ERR_NO_MEM);
 #if CONFIG_POWER_SAVE_MAX_MODEM
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
 #elif CONFIG_POWER_SAVE_MIN_MODEM

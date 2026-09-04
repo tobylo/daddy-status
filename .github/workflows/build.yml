@@ -1,18 +1,31 @@
 name: Firmware
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
 permissions:
   contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
     container: espressif/idf:v6.1
+    strategy:
+      matrix:
+        configuration: [default, diagnostics]
     steps:
       - uses: actions/checkout@v4
       - name: Build ESP32 firmware
         shell: bash
+        env:
+          BUILD_CONFIGURATION: ${{ matrix.configuration }}
         run: |
           . "$IDF_PATH/export.sh"
-          idf.py build
-      - name: Host protocol tests with sanitizers
+          if [ "$BUILD_CONFIGURATION" = diagnostics ]; then
+            idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.diagnostics' build
+          else
+            idf.py build
+          fi
+      - name: Host tests with sanitizers
+        if: matrix.configuration == 'default'
         shell: bash
         run: tests/run.sh

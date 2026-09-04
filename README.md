@@ -1,73 +1,151 @@
-# daddy-status
+# Daddy Status
 
-ESP32 application that polls current Microsoft Teams presence status via their Presence Graph API (preview).
-Originally written using ESP-IDF v4.0; the refactor builds with ESP-IDF v6.1.
+An ESP32 status light for the study door: read your Microsoft Teams presence and
+show whether it is a good time to come in. Originally built during COVID, now
+refactored for ESP-IDF **6.1**, with verified HTTPS, recoverable device login,
+explicit stale-status handling, and one persistent LED task.
 
-Hardware required:
-- ESP32
-- two WS2812 RGBs
+Uses Microsoft Graph [`GET /v1.0/me/presence`](https://learn.microsoft.com/en-us/graph/api/presence-get?view=graph-rest-1.0)
+with the delegated `Presence.Read` permission. This requires a **work or school
+account**; the endpoint does not support personal Microsoft accounts.
 
-## Demo
-[![demo](https://img.youtube.com/vi/txYKa6VPBUU/0.jpg)](https://www.youtube.com/watch?v=txYKa6VPBUU)
+## Hardware
 
-## TODO
-- write how-to
+- Classic ESP32 development board with at least 4 MB flash.
+- Two WS2812 LEDs connected in series.
+- GPIO **25** to the first LED's data input; first LED's data output to the second
+  LED's data input. GPIO is configurable.
+- A suitable supply for the LEDs, with **common ground** between supply, LEDs,
+  and ESP32. Follow the voltage and logic-level requirements for your particular
+  LEDs; use a suitable level shifter when needed. Do not power the LED supply from
+  an ESP32 GPIO. Avoid pins used for flash or other board hardware.
 
-## libraries
+This build targets `esp32`, not ESP32-S3/C3 or other variants. A detected serial
+port alone does not identify the attached board.
 
-Espressif managed `led_strip` component (replaces the original Lucas Bruder driver).
+## Microsoft app registration
 
-Form encoding is implemented locally with bounded allocation and byte-wise writes.
+1. In your organization's Microsoft Entra tenant, [register an application](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app).
+   A single-tenant registration is sufficient. Record its **Directory (tenant) ID**
+   and **Application (client) ID**, both GUIDs.
+2. Enable **Allow public client flows** in the registration's authentication
+   settings. Device-code authentication is a [public-client flow](https://learn.microsoft.com/en-us/entra/identity-platform/msal-client-applications).
+   No client secret belongs in this firmware.
+3. Add Microsoft Graph **delegated** `Presence.Read`. The firmware also requests
+   `offline_access` to obtain a refresh token. Complete user/admin consent as
+   required by your organization. Tenant policy must allow device-code login.
+4. During first login, use the URL/code printed on the serial monitor and sign in
+   as the user whose presence should drive the light. The [device-code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)
+   can return pending, slowdown, expired, or denied responses; these are handled
+   without an unbounded token-polling loop.
 
-## Build (ESP-IDF 6.1)
+## Build and flash
 
-The refactor targets a classic ESP32 and pins managed dependencies in
-`main/idf_component.yml` and `dependencies.lock`. Install ESP-IDF **v6.1** and its
-ESP32 tools, then:
+Install [ESP-IDF v6.1 and the ESP32 tools](https://docs.espressif.com/projects/esp-idf/en/v6.1/esp32/get-started/).
+The exact managed LED/cJSON versions and hashes are in `main/idf_component.yml`
+and `dependencies.lock`.
 
 ```sh
 . /path/to/esp-idf/export.sh
-idf.py menuconfig  # Daddy Status and WiFi setup: use your own configuration
+idf.py menuconfig
 idf.py build
 idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
-The default build uses placeholder credentials and does not connect to your
-account. `sdkconfig` is ignored because it contains your Wi-Fi password. Keep
-firmware images and build output private when built with real credentials.
-The old GNU Make build is no longer supported. See
-[the staged refactoring plan](docs/refactoring-plan.md) for remaining work.
+Use the actual serial port of this device, such as `/dev/ttyACM0` or `COM3` where
+appropriate. Exit the serial monitor with **Ctrl+]**. To use the included VS Code
+build/flash/monitor tasks, launch VS Code from the shell after exporting ESP-IDF.
+Flash and monitor tasks prompt for the port. Debugger configuration is specific
+to your board and probe and is not supplied.
 
-## Automated checks
+In `menuconfig`, set:
 
-After `idf.py build` downloads the pinned cJSON component, run `tests/run.sh`
-with a host C compiler. It checks response chunk assembly, exact buffer limits,
-form encoding, malformed JSON, and retry headers under AddressSanitizer and
-UndefinedBehaviorSanitizer. CI runs these checks after compiling the firmware.
+| Setting | Default / notes |
+| --- | --- |
+| Wi-Fi SSID / password | Empty; supply a 2.4 GHz network. Empty password only for an open network. |
+| Tenant / client IDs | Empty; supply both GUIDs from the app registration. |
+| LED data GPIO | 25; choose an output pin appropriate for your board. |
+| Presence poll interval | 15 seconds |
+| Stale timeout | 60 seconds; must exceed the polling interval |
+| LED brightness | 100%; rainbow also applies its intended 30% intensity |
+| NTP server | `pool.ntp.org`; replace if your network requires another server |
+| Status diagnostics | Off; enable for heap/stack observation |
 
-HTTPS uses the ESP-IDF CA bundle and waits for SNTP clock synchronization. The
-network must permit DNS, NTP, and HTTPS to Microsoft. Access tokens remain in
-RAM; refresh tokens persist in the `graphapi` NVS namespace. Existing stored
-refresh tokens are reused; obsolete stored access tokens are erased when tokens
-are updated. This does not enable flash encryption: physical flash protection
-requires separate device provisioning. Device-code login instructions appear on
-the serial monitor; token values and authorization headers are not logged.
+An unconfigured build shows magenta and logs what needs configuration. The
+network must permit DNS, NTP, and HTTPS to Microsoft. HTTPS waits for clock
+synchronization and uses the ESP-IDF CA bundle; do not disable certificate checks
+to work around network or clock failures.
 
-Presence polling defaults to 15 seconds and is configurable in `menuconfig`.
+`sdkconfig`, build output, and managed downloads are ignored. Wi-Fi credentials
+are compiled into your firmware, so keep configured builds private. Access tokens
+stay in RAM; refresh tokens persist in NVS and survive normal reflashing. The
+application does not log token values or authorization headers. Keep SDK HTTP/TLS
+logging at its normal level when handling live credentials. Flash encryption is
+not enabled by this project; physical flash protection needs separate device
+provisioning.
 
-## Status lights
+## What the lights mean
 
 | Display | Meaning |
 | --- | --- |
-| Green | Available (also away/idle, preserving the original mapping) |
+| Green | Available, away, be-right-back, or idle |
 | One yellow LED | Busy |
 | Blinking red | Do not disturb, meeting, call, or presenting |
-| Rainbow | Off work/offline/out of office |
+| Rainbow | Off work, offline, or out of office |
 | Blinking yellow | Initial authentication in progress; check serial monitor |
 | Blinking blue | Connecting, synchronizing clock, unknown, or stale presence |
-| Solid magenta | Invalid application configuration; check serial monitor |
+| Solid magenta | Invalid configuration; check serial monitor |
 
-The default stale timeout is 60 seconds, configurable in `menuconfig` and required
-to exceed the polling interval. Temporary service errors preserve the last known
-presence until then; Wi-Fi disconnection shows blue immediately. Brightness is
-configurable. Rainbow uses the originally intended 30% intensity.
+Temporary service/authentication errors preserve a fresh presence until its stale
+timeout. Wi-Fi loss shows blue as soon as the display loop observes it (normally
+within 100 ms). Unknown Graph activities show blue, never green. Receiving a token
+alone does not indicate availability. Away/offline mappings preserve the original
+project's behavior and are centralized in `main/presence.c`.
+
+## Recovery
+
+- **Blue at startup:** check Wi-Fi and NTP access. If the clock is synchronized,
+  check Microsoft connectivity and serial logs. Reconnects and transient requests
+  retry with backoff; numeric `Retry-After` values are respected.
+- **Yellow:** finish device login on the serial monitor. Expired/denied device
+  codes finish that attempt; the worker can start another attempt after backoff.
+- **Magenta:** correct missing/invalid IDs, Wi-Fi SSID, NTP server, or polling/stale
+  intervals in `menuconfig`, rebuild, and flash.
+- **HTTP 403:** check delegated permission, consent, and tenant policy. Repeated
+  token refresh does not solve a permission denial.
+- **Revoked refresh token:** the device returns to the device-code login flow.
+- **Change account or reset saved authorization:** revoke the app's authorization
+  in your account, or deliberately erase the device and reflash:
+
+  ```sh
+  idf.py -p /dev/ttyUSB0 erase-flash
+  idf.py -p /dev/ttyUSB0 flash monitor
+  ```
+
+  Erasing flash deletes all device data, including saved authorization. It is not
+  required for normal updates. NVS also reinitializes if the SDK reports an
+  incompatible format or exhausted pages; that recovery requires login again.
+
+## Development and validation
+
+```sh
+idf.py build          # also downloads the pinned cJSON sources
+./tests/run.sh        # host C compiler + AddressSanitizer/UndefinedBehaviorSanitizer
+clang-format -i main/*.c main/include/*.h tests/*.c tests/fakes/*.h tests/fakes/freertos/*.h
+```
+
+CI compiles default and diagnostics-enabled firmware and runs the host suites.
+Tests cover parsing/encoding, authentication, storage, presence mapping, state
+freshness, LED frames and worker control flow, and HTTP response handling. Parser
+nesting is limited to 16 to fit the embedded stack. See [architecture](docs/architecture.md),
+[validation and hardware acceptance](docs/validation.md), and the
+[refactoring stages](docs/refactoring-plan.md).
+
+The old GNU Make build and copied LED/URI libraries have been removed. LED output
+uses Espressif's managed `led_strip`; JSON uses managed `cjson`, with upstream
+licenses retained in their downloaded packages. Form encoding is implemented
+locally with bounded allocation and byte-wise writes.
+
+## Original demo
+
+[![demo](https://img.youtube.com/vi/txYKa6VPBUU/0.jpg)](https://www.youtube.com/watch?v=txYKa6VPBUU)
