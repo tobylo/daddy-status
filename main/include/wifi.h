@@ -2,6 +2,6 @@
 #define _WIFI_H_
 
 void wifi_init(void);
-void wifi_wait_connected();
+void wifi_wait_connected(void);
 
 #endif

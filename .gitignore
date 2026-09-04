@@ -13,3 +13,6 @@ sdkconfig
 build
 trace
 debug.log
+sdkconfig.old
+managed_components/
+.env

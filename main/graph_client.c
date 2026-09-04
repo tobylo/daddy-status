@@ -8,7 +8,6 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_event.h"
-#include "tcpip_adapter.h"
 #include "esp_tls.h"
 #include "esp_http_client.h"
 #include "graph_client.h"
@@ -42,7 +41,7 @@ static const char *GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 static const char *SCOPE = "presence.read offline_access";
 
 
-static esp_err_t nvs_graphapi_open()
+static esp_err_t nvs_graphapi_open(void)
 {
     ESP_LOGD(AUTH_CLIENT_TAG, "Opening Non-Volatile Storage (NVS) handle... ");
     esp_err_t err = nvs_open("graphapi", NVS_READWRITE, &NVS_HANDLE);
@@ -55,7 +54,7 @@ static esp_err_t nvs_graphapi_open()
     }
 }
 
-static void nvs_graphapi_close()
+static void nvs_graphapi_close(void)
 {
     nvs_close(NVS_HANDLE);
 }
@@ -63,6 +62,8 @@ static void nvs_graphapi_close()
 esp_err_t _graph_client_event_handler(esp_http_client_event_t *evt)
 {
     switch(evt->event_id) {
+        default:
+            break;
         case HTTP_EVENT_ERROR:
             ESP_LOGD(AUTH_CLIENT_TAG, "HTTP_EVENT_ERROR");
             break;
@@ -98,7 +99,7 @@ esp_err_t _graph_client_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-static esp_err_t init_auth_client()
+static esp_err_t init_auth_client(void)
 {
     ESP_LOGD(AUTH_CLIENT_TAG, "initializing auth http client");
 
@@ -130,7 +131,7 @@ static esp_err_t init_auth_client()
     return ESP_OK;
 }
 
-static esp_err_t init_aad_auth_flow()
+static esp_err_t init_aad_auth_flow(void)
 {
     ESP_LOGD(AUTH_CLIENT_TAG, "initializing Azure AD auth flow");
 
@@ -348,7 +349,7 @@ static esp_err_t fetch_token(char *refresh_token)
     return err;
 }
 
-static esp_err_t refresh_access_token()
+static esp_err_t refresh_access_token(void)
 {
     esp_err_t err = ESP_OK;
 
@@ -379,7 +380,7 @@ static esp_err_t refresh_access_token()
     return err;
 }
 
-static void graph_client_set_bearer_token()
+static void graph_client_set_bearer_token(void)
 {
     ESP_ERROR_CHECK(nvs_graphapi_open());
     esp_err_t err;
@@ -407,7 +408,7 @@ static void graph_client_set_bearer_token()
     err = esp_http_client_set_header(GRAPH_CLIENT, "authorization", authorization_header);
 }
 
-static esp_err_t init_graph_client()
+static esp_err_t init_graph_client(void)
 {
     ESP_LOGD(GRAPH_CLIENT_TAG, "initializing graph API http client");
     
@@ -482,7 +483,7 @@ void poll_presence_task(void *pvParameters)
         if(status_code == 401 || status_code == 403)
         {
             ESP_LOGI(GRAPH_CLIENT_TAG, "received status code %d, refreshing access token to see if possible.", status_code);
-            ESP_ERROR_CHECK(refresh_token());
+            ESP_ERROR_CHECK(refresh_token(evtQueueHandle));
             graph_client_set_bearer_token();
             continue;
         }
@@ -510,7 +511,7 @@ void poll_presence_task(void *pvParameters)
         char *presence_activity = cJSON_GetObjectItem(root,"activity")->valuestring;
         ESP_LOGI(GRAPH_CLIENT_TAG, "presence: %s", presence_activity);
 
-        unsigned int state;
+        unsigned int state = STATE_FAILED;
         
         switchs (presence_activity)
         {
