@@ -3,7 +3,6 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_system.h"
-#include "esp_spi_flash.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "ledcontrol.h"
@@ -14,10 +13,10 @@
 #define ESP_INTR_FLAG_DEFAULT 0
 
 static const char* TAG = "main";
-static xQueueHandle evt_queue = NULL;
+static QueueHandle_t evt_queue = NULL;
 static unsigned int current = 1000;
 
-esp_err_t nvs_init()
+esp_err_t nvs_init(void)
 {
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -30,7 +29,7 @@ esp_err_t nvs_init()
     return ret;
 }
 
-esp_err_t queue_init()
+esp_err_t queue_init(void)
 {
     evt_queue = xQueueCreate(2, sizeof(uint32_t));
     if(evt_queue != NULL) {
@@ -93,9 +92,9 @@ void presence_handler_task(void *pvParameters)
     }
 }
 
-void app_main()
+void app_main(void)
 {
-    leds_init();
+    ESP_ERROR_CHECK(leds_init() ? ESP_OK : ESP_FAIL);
 
     nvs_init();
 

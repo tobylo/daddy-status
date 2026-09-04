@@ -13,17 +13,7 @@ static TaskHandle_t led_task_handle = NULL;
 static const int BLINK_INTERVAL = 750;
 static struct led_color_t *DESIRED_COLORS[LED_STRIP_LENGTH];
 
-struct led_color_t led_strip_buf_1[LED_STRIP_LENGTH];
-struct led_color_t led_strip_buf_2[LED_STRIP_LENGTH];
-struct led_strip_t led_strip = {
-    .rgb_led_type = RGB_LED_TYPE_WS2812,
-    .rmt_channel = RMT_CHANNEL_1,
-    .rmt_interrupt_num = LED_STRIP_RMT_INTR_NUM,
-    .gpio = CONFIG_LED_DATA_GPIO,
-    .led_strip_buf_1 = led_strip_buf_1,
-    .led_strip_buf_2 = led_strip_buf_2,
-    .led_strip_length = LED_STRIP_LENGTH
-};
+static led_strip_handle_t strip;
 
 struct led_color_t LED_COLOR_OFF = {
     .red = 0,
@@ -92,15 +82,15 @@ static void leds_rainbow_task(void *pvParameters)
         {
             hsv_angle_to_rgb(k, &color, 0.3);
             for (int i = 0; i < LED_STRIP_LENGTH; i++) {
-                led_strip_set_pixel_color(&led_strip, i, &color);
+                led_strip_set_pixel(strip, i, color.red, color.green, color.blue);
             }
-            led_strip_show(&led_strip);
+            led_strip_refresh(strip);
             vTaskDelay(15 / portTICK_PERIOD_MS);
         }
     }   
 }
 
-static void leds_helper_stop_task()
+static void leds_helper_stop_task(void)
 {
     ESP_LOGD(TAG, "called: leds_helper_stop_task");
     TaskHandle_t xTask = led_task_handle;
@@ -118,35 +108,39 @@ void leds_blink_task(void *pvParameters)
     for(;;)
     {
         for (int i = 0; i < LED_STRIP_LENGTH; i++) {
-            led_strip_set_pixel_color(&led_strip, i, DESIRED_COLORS[i]);
+            led_strip_set_pixel(strip, i, DESIRED_COLORS[i]->red, DESIRED_COLORS[i]->green, DESIRED_COLORS[i]->blue);
         }
-        led_strip_show(&led_strip);
+        led_strip_refresh(strip);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
         
-        led_strip_clear(&led_strip);
-        led_strip_show(&led_strip);
+        led_strip_clear(strip);
+        led_strip_refresh(strip);
         vTaskDelay(BLINK_INTERVAL / portTICK_PERIOD_MS);
     }
 }
 
-void leds_clear()
+void leds_clear(void)
 {
     ESP_LOGD(TAG, "called: leds_clear");
 
     leds_helper_stop_task();
-    led_strip_clear(&led_strip);
+    led_strip_clear(strip);
     for (int i = 0; i < LED_STRIP_LENGTH; i++) {
         DESIRED_COLORS[i] = &LED_COLOR_OFF;
     }
     leds_apply(false);
 }
 
-bool leds_init()
+bool leds_init(void)
 {
-    led_strip.access_semaphore = xSemaphoreCreateBinary();
-    bool led_init_ok = led_strip_init(&led_strip);
-    ESP_LOGI(TAG, "led trip initialisation: %s", led_init_ok ? "SUCCESSFUL" : "ERROR");
-    assert(led_init_ok);
+    const led_strip_config_t config = {
+        .strip_gpio_num = CONFIG_LED_DATA_GPIO,
+        .max_leds = LED_STRIP_LENGTH,
+        .led_model = LED_MODEL_WS2812,
+    };
+    const led_strip_rmt_config_t rmt = {.resolution_hz = 10000000};
+    bool led_init_ok = led_strip_new_rmt_device(&config, &rmt, &strip) == ESP_OK;
+    if (!led_init_ok) return false;
 
     leds_clear();
     xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
@@ -158,13 +152,13 @@ void led_color(int led_index, struct led_color_t *color)
 {
     ESP_LOGD(TAG, "called: led_color");
 
-    if(led_index >= LED_STRIP_LENGTH) {
+    if(led_index < 0 || led_index >= LED_STRIP_LENGTH || color == NULL) {
         ESP_LOGE(TAG, "tried to set led color for index %d, array only contains %d leds", led_index, LED_STRIP_LENGTH);
         return;
     }
 
     DESIRED_COLORS[led_index] = color;
-    while(led_strip_set_pixel_color(&led_strip, led_index, DESIRED_COLORS[led_index]) == false) {
+    while(led_strip_set_pixel(strip, led_index, color->red, color->green, color->blue) != ESP_OK) {
         ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
         vTaskDelay(250 / portTICK_PERIOD_MS);
     }
@@ -177,14 +171,14 @@ void leds_color(struct led_color_t *color)
     for (int i = 0; i < LED_STRIP_LENGTH; i++)
     {
         DESIRED_COLORS[i] = color;
-        while(led_strip_set_pixel_color(&led_strip, i, DESIRED_COLORS[i]) == false) {
+        while(led_strip_set_pixel(strip, i, DESIRED_COLORS[i]->red, DESIRED_COLORS[i]->green, DESIRED_COLORS[i]->blue) != ESP_OK) {
             ESP_LOGE(TAG, "led_strip_set_pixel_color: failed, retrying..");
             vTaskDelay(250 / portTICK_PERIOD_MS);
         }
     }
 }
 
-void leds_rainbow()
+void leds_rainbow(void)
 {
     ESP_LOGD(TAG, "called: leds_rainbow");
     xTaskCreate(leds_rainbow_task, "leds_rainbow_task", 2048, NULL, 5, &led_task_handle);
@@ -196,7 +190,7 @@ void leds_apply(bool flash)
     if(flash) {
         xTaskCreate(leds_blink_task, "leds_helper_blink_task", 2048, NULL, 5, &led_task_handle);
     } else {
-        while(led_strip_show(&led_strip) == false) {
+        while(led_strip_refresh(strip) != ESP_OK) {
             ESP_LOGE(TAG, "leds_apply: failed, retrying..");
             vTaskDelay(250 / portTICK_PERIOD_MS);
         }
