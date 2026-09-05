@@ -171,3 +171,21 @@ other users of that network. Use a trusted home LAN and do not forward its port
 to the internet. Microsoft passwords are entered only on Microsoft’s HTTPS site;
 access, refresh, and opaque device tokens are never served. Responses are not
 cached. Wi-Fi credentials and Entra application settings still use menuconfig.
+
+## Reproduce the tested picture frame
+
+`sdkconfig.frame` records GPIO13, brightness 100%, a 10-second presence interval,
+and a 60-second stale threshold. Generic defaults still support other wiring.
+For a **fresh** local build, use:
+
+```sh
+idf.py -B build-frame -D SDKCONFIG=sdkconfig.frame.local \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame' menuconfig
+idf.py -B build-frame -D SDKCONFIG=sdkconfig.frame.local \
+  -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame' build
+```
+
+Enter Wi-Fi and Entra settings in menuconfig. Existing sdkconfig values take
+precedence over defaults, so this profile does not overwrite an existing device
+configuration. The generated local configuration and build directory are ignored.
+Hardware results and remaining checks are in `docs/validation.md`.

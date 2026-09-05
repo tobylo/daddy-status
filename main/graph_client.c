@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "http_transport.h"
 #include "presence.h"
+#include "sdkconfig.h"
 #include "task_time.h"
 #include "wifi.h"
 #include <string.h>
