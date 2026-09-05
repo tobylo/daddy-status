@@ -26,3 +26,19 @@ the owner requests a change. Do not store real credentials in source control.
 2. Verify expiry, success/error cleanup, startup failures, and target compilation;
    document discovery and picture-frame acceptance checks.
 3. Open one focused PR, address valid CodeRabbit findings, and merge after CI.
+
+## Operational improvements after hardware testing
+
+1. Credential-free frame profile, dated hardware results and Wi-Fi/Graph worker
+   regression tests. PR/review/merge; no device behaviour change.
+2. Event-driven Wi-Fi reconnection and deadline-based presence cadence; classify
+   persistent versus transient failures. PR/review, then pause for hardware
+   reboot, disconnect/reconnect, status latency and saved-login verification.
+3. Status dashboard and bounded LED test controls; pause for on-device UI/LED
+   checks before proceeding.
+4. Validated NVS settings, browser setup/recovery and authorization reset;
+   pause for provisioning, invalid-setting rollback and restart verification.
+
+Each stage has its own commit/PR and CodeRabbit review. Valid findings are fixed
+before merge. Hardware-dependent work does not proceed past its verification
+checkpoint without the owner's results.

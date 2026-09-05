@@ -11,7 +11,7 @@ jobs:
     container: espressif/idf:v6.1
     strategy:
       matrix:
-        configuration: [default, diagnostics]
+        configuration: [default, diagnostics, frame]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +24,8 @@ jobs:
           . "$IDF_PATH/export.sh"
           if [ "$BUILD_CONFIGURATION" = diagnostics ]; then
             idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.diagnostics' build
+          elif [ "$BUILD_CONFIGURATION" = frame ]; then
+            idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame' build
           else
             idf.py build
           fi

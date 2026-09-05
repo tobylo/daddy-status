@@ -11,4 +11,9 @@ typedef int esp_err_t;
 #define ESP_ERR_TIMEOUT 0x107
 #define ESP_ERR_INVALID_RESPONSE 0x108
 #define ESP_ERR_NOT_FINISHED 0x10c
+static inline const char *esp_err_to_name(esp_err_t err)
+{
+    (void)err;
+    return "fake error";
+}
 #endif

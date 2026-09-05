@@ -16,3 +16,7 @@ debug.log
 sdkconfig.old
 managed_components/
 .env
+
+sdkconfig.frame.local
+sdkconfig.frame.local.old
+build-frame/
