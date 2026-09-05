@@ -17,8 +17,15 @@ static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *da
         ip_event_got_ip_t *event = data;
         ESP_LOGI("wifi", "Open http://" IPSTR "/ to sign in", IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(wifi_events, CONNECTED_BIT);
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+        wifi_event_sta_connected_t *event = data;
+        ESP_LOGI("wifi", "Associated on channel %u; waiting for DHCP", event->channel);
     } else if (base == WIFI_EVENT &&
                (id == WIFI_EVENT_STA_START || id == WIFI_EVENT_STA_DISCONNECTED)) {
+        if (id == WIFI_EVENT_STA_DISCONNECTED) {
+            wifi_event_sta_disconnected_t *event = data;
+            ESP_LOGW("wifi", "Disconnected: reason=%u, RSSI=%d dBm", event->reason, event->rssi);
+        }
         xEventGroupClearBits(wifi_events, CONNECTED_BIT);
     }
     if (reconnect_task)
