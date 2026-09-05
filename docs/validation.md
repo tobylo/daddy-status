@@ -79,6 +79,12 @@ behavior remain part of hardware acceptance.
 Classic ESP32-D0WD revision 1.0, two WS2812 LEDs powered from 5 V with common
 ground and data on GPIO13. Firmware source b4544f9; local configuration uses a
 10-second presence delay and 60-second stale threshold (`sdkconfig.frame`).
+The actual tested build used the Git-ignored `sdkconfig`, which supplied Wi-Fi
+credentials and Entra tenant/client IDs in addition to these hardware settings.
+The new `sdkconfig.frame` captures only the non-secret settings; it was not the
+source of the historical build. For a new build, follow the README commands with
+`sdkconfig.defaults;sdkconfig.frame` and enter Wi-Fi/Entra settings into the
+ignored `sdkconfig.frame.local`. The profile alone cannot run authentication.
 No network credentials or Entra IDs are included in the profile.
 
 - Microsoft device-code sign-in through the frame's page: passed.
