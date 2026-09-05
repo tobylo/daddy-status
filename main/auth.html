@@ -2,49 +2,87 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Daddy Status · Sign in</title>
+<title>Daddy Status · Your frame</title>
 <style>
-body{font:18px/1.5 system-ui,sans-serif;background:#f2f4f6;color:#162532;margin:0;padding:24px}main{max-width:480px;margin:8vh auto;background:white;padding:32px;border-radius:20px;box-shadow:0 8px 32px #16253214}h1{font-size:28px;margin-top:0}code{display:block;font-size:32px;letter-spacing:3px;margin:24px 0;font-weight:bold}a{display:inline-block;background:#145cbd;color:white;padding:12px 20px;border-radius:8px;text-decoration:none}small{display:block;margin-top:24px;color:#526272}[hidden]{display:none}
+:root{font:16px/1.5 system-ui,sans-serif;color:#162532;background:#f2f4f6}body{margin:0;padding:24px}main{max-width:640px;margin:4vh auto}header,panel{display:block}header{margin-bottom:24px}h1{font-size:30px;margin:0}h2{font-size:19px;margin-top:0}.card{background:white;padding:24px;border-radius:16px;margin:16px 0;box-shadow:0 4px 20px #1625320a}.eyebrow{color:#526272;margin:0 0 4px}.status{margin-bottom:0}dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin:0}dt{color:#526272}dd{margin:0;text-align:right;overflow-wrap:anywhere}code{display:block;font-size:30px;letter-spacing:3px;margin:20px 0;font-weight:bold}a,button{display:inline-block;background:#145cbd;color:white;padding:10px 16px;border:0;border-radius:8px;font:inherit;text-decoration:none;cursor:pointer}button{background:#eaf0f7;color:#162532}button:hover{background:#d9e5f4}button:disabled{opacity:.45;cursor:wait}.buttons{display:flex;gap:8px;flex-wrap:wrap}small,.muted{color:#526272}small{display:block;margin-top:16px}[hidden]{display:none}@media(max-width:420px){body{padding:14px}.card{padding:18px}dl{gap:10px}main{margin:2vh auto}}
 </style>
 <main>
-<h1>Daddy Status</h1>
-<p id="status" role="status" aria-live="polite">Connecting to your frame…</p>
-<section id="login" hidden>
-<p>Open Microsoft sign-in and enter this code:</p>
-<code id="code"></code>
-<a href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">Sign in with Microsoft ↗</a>
-<p id="expiry"></p>
-</section>
-<noscript>Enable JavaScript to see the live sign-in code.</noscript>
-<small>Use the Microsoft work account whose presence should appear on the frame. Your password is entered on Microsoft’s website.</small>
+<header><p class="eyebrow">Your picture frame</p><h1>Daddy Status</h1><p id="status" class="status" role="status" aria-live="polite">Connecting to your frame…</p></header>
+<section class="card"><h2>Live status</h2><dl>
+<dt>Teams activity</dt><dd id="activity">—</dd>
+<dt>Presence data</dt><dd id="freshness">—</dd>
+<dt>Last successful update</dt><dd id="age">—</dd>
+<dt>Light pattern</dt><dd id="display">—</dd>
+<dt>Wi-Fi</dt><dd id="connection">—</dd>
+<dt>Microsoft account</dt><dd id="account">—</dd>
+</dl></section>
+<section id="login" class="card" hidden><h2>Sign in to Microsoft</h2>
+<p>Open Microsoft sign-in and enter this code:</p><code id="code"></code>
+<a href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">Sign in with Microsoft ↗</a><p id="expiry"></p>
+<small>Use the work account whose presence should appear on the frame. Your password is entered only on Microsoft’s website.</small></section>
+<section class="card"><h2>Test the lights</h2><p class="muted">A test overrides Teams for ten seconds, then normal status returns automatically. Yellow lights only the first LED.</p>
+<div class="buttons">
+<button data-mode="green" disabled>Green</button><button data-mode="red" disabled>Red</button><button data-mode="yellow" disabled>Yellow</button><button data-mode="blue" disabled>Blue</button><button data-mode="rainbow" disabled>Rainbow</button><button data-mode="auto" disabled>Return to Teams</button>
+</div><p id="test-status" role="status" aria-live="polite">Normal Teams status</p></section>
+<section class="card"><h2>Device</h2><dl>
+<dt>Polling interval</dt><dd id="poll">—</dd><dt>LED data pin</dt><dd id="gpio">—</dd><dt>Brightness</dt><dd id="brightness">—</dd><dt>Uptime</dt><dd id="uptime">—</dd>
+</dl></section>
+<noscript>Enable JavaScript to see live status and the sign-in code.</noscript>
 </main>
 <script>
-const statusText=document.getElementById('status');
-const login=document.getElementById('login');
-const code=document.getElementById('code');
-const expiry=document.getElementById('expiry');
-let deadline=0;
+const el=id=>document.getElementById(id);
+const statusText=el('status'),login=el('login'),code=el('code'),expiry=el('expiry');
+const buttons=Array.from(document.querySelectorAll('[data-mode]'));
+let deadline=0,controlToken='',testBusy=false,testDeadline=0;
+const errors={network:'Cannot reach Microsoft. Retrying automatically.',clock:'Waiting for clock synchronization before contacting Microsoft.',auth:'Microsoft sign-in needs attention. Retrying automatically.',auth_config:'Check the Microsoft app registration and tenant settings.',auth_denied:'Microsoft sign-in was declined. Waiting for another attempt.',auth_expired:'The sign-in code expired. Waiting for another attempt.',storage:'Cannot save or read the device’s login. Check device storage.',permission:'Signed in, but Microsoft denied access to presence. Check Presence.Read consent.',throttled:'Microsoft asked the frame to wait. Retrying after the required delay.',response:'Microsoft returned an unexpected response. Retrying automatically.'};
+const displays={connecting:'Blinking blue',authenticating:'Blinking yellow',unknown:'Blinking blue',green:'Green',yellow:'One yellow LED',red:'Blinking red',rainbow:'Rainbow',configuration:'Magenta'};
 function clearCode(){login.hidden=true;code.textContent='';deadline=0;}
+function enableTests(){buttons.forEach(button=>button.disabled=!controlToken||testBusy);}
 async function update(){
-  const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),5000);
-  try {
-    const response=await fetch('/api/auth',{cache:'no-store',signal:controller.signal});
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const response=await fetch('/api/status',{cache:'no-store',signal:controller.signal});
     if(!response.ok)throw new Error('Unavailable');
     const data=await response.json();
     clearCode();
-    if(data.state==='code' && data.expires_in>0){
-      code.textContent=data.user_code;
-      deadline=Date.now()+data.expires_in*1000;
-      login.hidden=false;
+    controlToken=data.control_token||'';
+    el('activity').textContent=data.activity||'Not received yet';
+    el('freshness').textContent=data.fresh?'Current':'Unavailable or stale';
+    el('age').textContent=data.age_seconds>=0?data.age_seconds+' seconds ago':'Not received yet';
+    el('display').textContent=displays[data.display]||'Unknown';
+    el('connection').textContent=data.connected?'Connected':'Disconnected';
+    el('account').textContent=data.state==='signed_in'?'Signed in':data.state==='code'?'Sign-in required':'Waiting';
+    el('poll').textContent=data.poll_seconds+' seconds';
+    el('gpio').textContent='GPIO '+data.led_gpio;
+    el('brightness').textContent=data.brightness_percent+'%';
+    el('uptime').textContent=Math.floor(data.uptime_seconds/60)+' minutes';
+    testDeadline=data.test_seconds>0?Date.now()+data.test_seconds*1000:0;
+    if(!testBusy)el('test-status').textContent=testDeadline?'LED test active; normal status returns automatically.':'Normal Teams status';
+    statusText.textContent=!data.connected?'The frame is reconnecting to Wi-Fi.':errors[data.error]||(data.service==='clock'?'Waiting for clock synchronization…':data.fresh?'Your frame is receiving Teams presence.':data.state==='signed_in'?'Signed in. Waiting for a fresh presence update…':'Waiting for the frame to connect to Microsoft…');
+    if(data.state==='code'&&data.expires_in>0){
+      code.textContent=data.user_code;deadline=Date.now()+data.expires_in*1000;login.hidden=false;
       statusText.textContent='Your frame needs you to sign in.';
-      tick();
-    }else{
-      statusText.textContent=data.state==='signed_in'?'Signed in. You can close this page.':data.state==='retrying'?'Sign-in did not complete. The frame will retry automatically.':'Waiting for the frame to connect to Microsoft…';
     }
-  }catch(error){clearCode();statusText.textContent='Cannot reach the frame. Check that you are on the same Wi-Fi. Reconnecting…';}
-  clearTimeout(timeout);
-  setTimeout(update,3000);
+    tick();
+  }catch(error){
+    clearCode();controlToken='';testDeadline=0;
+    ['activity','freshness','age','display','account'].forEach(id=>el(id).textContent='Unavailable');
+    el('connection').textContent='Cannot reach frame';
+    el('test-status').textContent='Cannot reach frame. Any active test expires automatically.';
+    statusText.textContent='Cannot reach the frame. Check that you are on the same Wi-Fi. Reconnecting…';
+  }
+  clearTimeout(timeout);enableTests();setTimeout(update,3000);
+}
+async function testLights(mode){
+  if(testBusy||!controlToken)return;
+  testBusy=true;enableTests();
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
+  try{
+    const response=await fetch('/api/led-test',{method:'POST',headers:{'Content-Type':'application/json','X-Frame-Token':controlToken},body:JSON.stringify({mode}),signal:controller.signal});
+    if(!response.ok)throw new Error('Rejected');
+    el('test-status').textContent=mode==='auto'?'Returning to Teams status…':'Test started. Normal status returns after ten seconds.';
+  }catch(error){el('test-status').textContent='Could not confirm the test. Any started test expires automatically.';}
+  clearTimeout(timeout);testBusy=false;enableTests();
 }
 function tick(){
   if(!deadline)return;
@@ -52,7 +90,7 @@ function tick(){
   if(!seconds){clearCode();statusText.textContent='Code expired. Waiting for a new code…';return;}
   expiry.textContent='Code expires in '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
 }
-setInterval(tick,1000);
-update();
+buttons.forEach(button=>button.addEventListener('click',()=>testLights(button.dataset.mode)));
+setInterval(tick,1000);update();
 </script>
 </html>

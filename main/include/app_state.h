@@ -19,6 +19,7 @@ typedef struct {
     service_state_t service;
     service_error_t error;
     presence_t presence;
+    char activity[64];
     bool has_presence;
     int64_t updated_at_us;
 } app_status_t;

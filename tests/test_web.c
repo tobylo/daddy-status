@@ -11,7 +11,35 @@ const char test_page[] __asm__("_binary_auth_html_start") = "<!doctype html>";
 static int64_t now;
 static int registrations, stops, fail_registration;
 static bool fail_start, no_store;
-static char output[512];
+static char output[2048];
+static const char *request_token, *request_body;
+static size_t body_offset;
+static int error_status;
+void esp_fill_random(void *buffer, size_t length)
+{
+    memset(buffer, 42, length);
+}
+esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *req, const char *name, char *value, size_t size)
+{
+    assert(!strcmp(name, "X-Frame-Token"));
+    if (!request_token || strlen(request_token) >= size)
+        return ESP_FAIL;
+    strcpy(value, request_token);
+    return ESP_OK;
+}
+int httpd_req_recv(httpd_req_t *req, char *buffer, size_t size)
+{
+    if (!request_body)
+        return -1;
+    size_t n = strlen(request_body) - body_offset;
+    if (n > size)
+        n = size;
+    if (n > 3)
+        n = 3; /* Exercise split request bodies. */
+    memcpy(buffer, request_body + body_offset, n);
+    body_offset += n;
+    return n;
+}
 static auth_observer_t callback;
 int64_t esp_timer_get_time(void)
 {
@@ -35,7 +63,7 @@ esp_err_t httpd_stop(httpd_handle_t handle)
 }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle, const httpd_uri_t *route)
 {
-    assert(route->method == HTTP_GET);
+    assert(route->method == HTTP_GET || route->method == HTTP_POST);
     ++registrations;
     return registrations == fail_registration ? ESP_FAIL : ESP_OK;
 }
@@ -57,6 +85,7 @@ esp_err_t httpd_resp_send(httpd_req_t *req, const char *body, int length)
 }
 esp_err_t httpd_resp_send_err(httpd_req_t *req, int status, const char *body)
 {
+    error_status = status;
     return ESP_FAIL;
 }
 static void check(const char *expected, const char *code, int seconds)
@@ -70,6 +99,60 @@ static void check(const char *expected, const char *code, int seconds)
     assert(cJSON_GetObjectItem(json, "expires_in")->valueint == seconds);
     cJSON_Delete(json);
 }
+static void dashboard_and_controls(void)
+{
+    app_status_t current = {.service = SERVICE_READY,
+                            .presence = PRESENCE_AVAILABLE,
+                            .has_presence = true,
+                            .updated_at_us = now};
+    strcpy(current.activity, "Available");
+    web_server_update(&current, true, DISPLAY_AVAILABLE);
+    assert(dashboard_get(NULL) == ESP_OK && no_store);
+    cJSON *json = cJSON_Parse(output);
+    assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "fresh")));
+    assert(!strcmp(json_string(json, "activity"), "Available"));
+    assert(strlen(json_string(json, "control_token")) == 32);
+    cJSON_Delete(json);
+    now += 60000000;
+    assert(dashboard_get(NULL) == ESP_OK);
+    json = cJSON_Parse(output);
+    assert(cJSON_IsFalse(cJSON_GetObjectItem(json, "fresh")));
+    cJSON_Delete(json);
+    current.service = SERVICE_ERROR;
+    current.error = SERVICE_ERROR_PERMISSION;
+    web_server_update(&current, true, DISPLAY_UNKNOWN);
+    assert(dashboard_get(NULL) == ESP_OK);
+    json = cJSON_Parse(output);
+    assert(!strcmp(json_string(json, "error"), "permission"));
+    cJSON_Delete(json);
+    httpd_req_t req = {.content_len = 14};
+    request_body = "{\"mode\":\"red\"}";
+    assert(led_test_post(&req) == ESP_FAIL && error_status == 403);
+    request_token = "wrong";
+    assert(led_test_post(&req) == ESP_FAIL && error_status == 403);
+    request_token = control_token;
+    req.content_len = strlen(request_body);
+    body_offset = 0;
+    assert(led_test_post(&req) == ESP_OK);
+    assert(web_server_display(DISPLAY_AVAILABLE, now) == DISPLAY_DO_NOT_DISTURB);
+    assert(web_server_display(DISPLAY_AVAILABLE, now + 9999999) == DISPLAY_DO_NOT_DISTURB);
+    assert(web_server_display(DISPLAY_AVAILABLE, now + 10000000) == DISPLAY_AVAILABLE);
+    request_body = "{\"mode\":\"auto\"}";
+    req.content_len = strlen(request_body);
+    body_offset = 0;
+    assert(led_test_post(&req) == ESP_OK &&
+           web_server_display(DISPLAY_AVAILABLE, now) == DISPLAY_AVAILABLE);
+    request_body = "{\"mode\":\"invalid\"}";
+    req.content_len = strlen(request_body);
+    body_offset = 0;
+    assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
+    req.content_len = 65;
+    assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
+    req.content_len = 10;
+    request_body = NULL;
+    assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
+}
+
 int main(void)
 {
     fail_start = true;
@@ -79,7 +162,7 @@ int main(void)
     assert(web_server_start() == ESP_FAIL && !callback && stops == 1);
     registrations = 0;
     fail_registration = 0;
-    assert(web_server_start() == ESP_OK && registrations == 2 && callback);
+    assert(web_server_start() == ESP_OK && registrations == 4 && callback);
     check("waiting", "", 0);
     char borrowed[] = "ABCD-EFGH";
     callback(AUTH_CODE_READY, borrowed, 5000000);
@@ -96,5 +179,6 @@ int main(void)
     callback(AUTH_CODE_READY, "\"<script>", now + 1000000);
     check("code", "\"<script>", 1);
     assert(index_get(NULL) == ESP_OK && !strcmp(output, test_page));
+    dashboard_and_controls();
     puts("web routes, startup cleanup, code ownership, expiry, and JSON tests passed");
 }

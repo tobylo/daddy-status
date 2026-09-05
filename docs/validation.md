@@ -123,3 +123,29 @@ After flashing the connection/polling changes, verify before proceeding:
 Host tests cover timeout cancellation and station restart when cancellation is
 not acknowledged; that rare path remains dependent on real SDK event delivery.
 No router configuration or credentials are changed by this stage.
+
+### Stage 2 hardware results — accepted 2026-09-06
+
+Firmware 40af72d: restart and saved sign-in succeeded. The owner confirmed
+Available/DND LED changes and blue during the controlled SSID outage. Recovery
+was delayed: the AP became visible around capture time 421 seconds, DHCP
+returned at 539.5 seconds, and fresh presence/green returned at 540.9 seconds.
+No intervention or additional firmware change was required. The owner confirmed
+green and approved moving to stage 3. The precise cause of the authentication/
+association failures is unresolved; do not describe this as fast reconnection.
+The captured excerpt confirms subsequent polling, not a completed 24-hour soak.
+
+## Stage 3 hardware checkpoint — pending
+
+- Compare dashboard activity, freshness, light pattern, GPIO13 and 10-second
+  interval with Teams and the physical frame.
+- Test green, red, yellow (first LED), blue and rainbow. Verify automatic return
+  to Teams after ten seconds, including after closing the browser.
+- Start a test and use Return to Teams to cancel immediately.
+- Verify sign-in still survives restart. Check the page on the owner's phone.
+- During an outage, the page must indicate unreachable/stale data rather than
+  imply the previously displayed activity is current.
+
+Host coverage checks the production dashboard and POST handlers, split/bounded
+bodies, missing/incorrect control tokens, exact device-side test expiry, explicit
+cancellation, permission/freshness reporting, and browser action/recovery flows.
