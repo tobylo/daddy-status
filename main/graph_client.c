@@ -41,10 +41,12 @@ static void poll_presence_task(void *unused)
     esp_err_t err = esp_netif_sntp_init(&time_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Cannot initialize time synchronization: %s", esp_err_to_name(err));
+        status.error = SERVICE_ERROR_CLOCK;
         publish(SERVICE_ERROR);
         vTaskSuspend(NULL);
     }
     while (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(15000)) != ESP_OK) {
+        status.error = SERVICE_ERROR_CLOCK;
         publish(SERVICE_ERROR);
         ESP_LOGW(TAG, "Waiting for clock synchronization before TLS");
     }
@@ -54,10 +56,13 @@ static void poll_presence_task(void *unused)
     for (;;) {
         diagnostics_sample("graph", &last_diagnostic);
         wifi_wait_connected();
+        status.error = SERVICE_ERROR_NONE;
+        int64_t poll_started = esp_timer_get_time();
         unsigned retry_after = 0;
         if (!auth_client_ready(&auth)) {
             publish(SERVICE_AUTHENTICATING);
             err = auth_client_ensure(&auth, &retry_after);
+            status.error = auth.error;
             if (err == ESP_OK)
                 publish(SERVICE_POLLING);
         } else
@@ -69,9 +74,10 @@ static void poll_presence_task(void *unused)
             retry_after = response.retry_after;
             if (err == ESP_OK && response.status == 200) {
                 cJSON *root = response_json(&response.body);
-                if (!root || !json_string(root, "activity"))
+                if (!root || !json_string(root, "activity")) {
+                    status.error = SERVICE_ERROR_RESPONSE;
                     err = ESP_ERR_INVALID_RESPONSE;
-                else {
+                } else {
                     presence_t presence = presence_from_json(root);
                     status.presence = presence;
                     status.has_presence = true;
@@ -80,13 +86,19 @@ static void poll_presence_task(void *unused)
                 }
                 cJSON_Delete(root);
             } else {
+                status.error = err != ESP_OK ? SERVICE_ERROR_NETWORK : SERVICE_ERROR_RESPONSE;
+                if (response.status == 429)
+                    status.error = SERVICE_ERROR_THROTTLED;
                 if (response.status == 401) {
+                    status.error = SERVICE_ERROR_AUTH;
                     auth_client_invalidate(&auth);
                 }
                 if (response.status == 403) {
+                    status.error = SERVICE_ERROR_PERMISSION;
                     ESP_LOGE(TAG,
                              "Presence permission denied; check app consent and tenant policy");
-                    retry_after = 60;
+                    if (retry_after < 60)
+                        retry_after = 60;
                 }
                 err = ESP_FAIL;
             }
@@ -94,7 +106,7 @@ static void poll_presence_task(void *unused)
         }
         if (err == ESP_OK) {
             backoff = 2;
-            task_wait_seconds(CONFIG_PRESENCE_POLL_SECONDS);
+            task_wait_poll_slot(poll_started, CONFIG_PRESENCE_POLL_SECONDS);
         } else {
             publish(SERVICE_ERROR);
             ESP_LOGW(TAG, "Request failed: %s", esp_err_to_name(err));

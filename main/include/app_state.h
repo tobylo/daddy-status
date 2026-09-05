@@ -1,6 +1,7 @@
 #ifndef DADDY_APP_STATE_H
 #define DADDY_APP_STATE_H
 #include "presence.h"
+#include "service_error.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -16,6 +17,7 @@ typedef enum {
 
 typedef struct {
     service_state_t service;
+    service_error_t error;
     presence_t presence;
     bool has_presence;
     int64_t updated_at_us;

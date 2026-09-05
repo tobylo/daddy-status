@@ -189,3 +189,8 @@ Enter Wi-Fi and Entra settings in menuconfig. Existing sdkconfig values take
 precedence over defaults, so this profile does not overwrite an existing device
 configuration. The generated local configuration and build directory are ignored.
 Hardware results and remaining checks are in `docs/validation.md`.
+
+Successful presence requests are scheduled on the configured interval rather
+than sleeping a full interval after each request. Slow requests skip missed
+slots; service failures and throttling use separate retry delays. The Wi-Fi
+worker waits up to 30 seconds for connection and DHCP before cancelling/retrying.

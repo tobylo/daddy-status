@@ -29,3 +29,4 @@ run_test web tests/test_web.c "$CJSON/cJSON.c"
 run_test graph_worker tests/test_graph_worker.c main/protocol.c main/presence.c \
     main/app_state.c main/diagnostics.c "$CJSON/cJSON.c"
 run_test wifi_worker tests/test_wifi_worker.c
+run_test poll_timing tests/test_poll_timing.c

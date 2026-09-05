@@ -1,12 +1,14 @@
 #ifndef DADDY_AUTH_CLIENT_H
 #define DADDY_AUTH_CLIENT_H
 #include "esp_err.h"
+#include "service_error.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
     char *access_token;
     int64_t access_deadline;
+    service_error_t error;
 } auth_client_t;
 
 typedef enum { AUTH_WAITING, AUTH_CODE_READY, AUTH_SIGNED_IN, AUTH_RETRYING } auth_event_t;

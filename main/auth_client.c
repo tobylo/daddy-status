@@ -27,6 +27,20 @@ static void notify(auth_event_t event, const char *code, int64_t deadline)
 
 static const char *SCOPE = "https://graph.microsoft.com/Presence.Read offline_access";
 
+static void classify_failure(auth_client_t *auth, const cJSON *root, int status)
+{
+    const char *code = json_string(root, "error");
+    if (status == 429)
+        auth->error = SERVICE_ERROR_THROTTLED;
+    else if (code && (!strcmp(code, "invalid_client") || !strcmp(code, "unauthorized_client") ||
+                      !strcmp(code, "invalid_scope")))
+        auth->error = SERVICE_ERROR_AUTH_CONFIG;
+    else if (code && (!strcmp(code, "authorization_declined") || !strcmp(code, "access_denied")))
+        auth->error = SERVICE_ERROR_AUTH_DENIED;
+    else if (code && !strcmp(code, "expired_token"))
+        auth->error = SERVICE_ERROR_AUTH_EXPIRED;
+}
+
 static esp_err_t accept_tokens(auth_client_t *auth, const cJSON *root, bool refreshing)
 {
     const char *access = json_string(root, "access_token");
@@ -42,6 +56,7 @@ static esp_err_t accept_tokens(auth_client_t *auth, const cJSON *root, bool refr
         return ESP_ERR_NO_MEM;
     esp_err_t err = refresh ? token_storage_write(refresh) : ESP_OK;
     if (err != ESP_OK) {
+        auth->error = SERVICE_ERROR_STORAGE;
         secret_free(copy);
         return err;
     }
@@ -83,8 +98,11 @@ static esp_err_t refresh_access(auth_client_t *auth, unsigned *retry_after)
 {
     char *refresh = NULL;
     esp_err_t err = token_storage_read(&refresh);
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
+        if (err != ESP_ERR_NOT_FOUND)
+            auth->error = SERVICE_ERROR_STORAGE;
         return err;
+    }
     char *form = token_form(refresh, true);
     secret_free(refresh);
     if (!form)
@@ -95,11 +113,14 @@ static esp_err_t refresh_access(auth_client_t *auth, unsigned *retry_after)
     *retry_after = response.retry_after;
     cJSON *root = err == ESP_OK ? response_json(&response.body) : NULL;
     if (err == ESP_OK) {
+        classify_failure(auth, root, response.status);
         const char *code = json_string(root, "error");
         if (response.status == 200)
             err = accept_tokens(auth, root, true);
         else if (response.status == 400 && code && !strcmp(code, "invalid_grant")) {
             err = token_storage_write(NULL);
+            if (err != ESP_OK)
+                auth->error = SERVICE_ERROR_STORAGE;
             if (err == ESP_OK)
                 err = ESP_ERR_NOT_FOUND;
         } else {
@@ -128,6 +149,7 @@ static esp_err_t device_login(auth_client_t *auth, unsigned *retry_after)
     free(form);
     *retry_after = response.retry_after;
     cJSON *root = err == ESP_OK ? response_json(&response.body) : NULL;
+    classify_failure(auth, root, response.status);
     const char *code = json_string(root, "device_code");
     const char *message = json_string(root, "message");
     const char *user_code = json_string(root, "user_code");
@@ -167,6 +189,7 @@ static esp_err_t device_login(auth_client_t *auth, unsigned *retry_after)
         err = auth_request("token", form, &response);
         *retry_after = response.retry_after;
         root = err == ESP_OK ? response_json(&response.body) : NULL;
+        classify_failure(auth, root, response.status);
         const char *error = json_string(root, "error");
         bool again = false;
         if (err == ESP_OK && response.status == 200) {
@@ -193,6 +216,8 @@ static esp_err_t device_login(auth_client_t *auth, unsigned *retry_after)
             break;
     }
     secret_free(form);
+    if (err == ESP_ERR_TIMEOUT || err == ESP_ERR_NOT_FINISHED)
+        auth->error = SERVICE_ERROR_AUTH_EXPIRED;
     return err;
 }
 
@@ -217,10 +242,15 @@ esp_err_t auth_client_ensure(auth_client_t *auth, unsigned *retry_after)
     *retry_after = 0;
     if (auth_client_ready(auth))
         return ESP_OK;
+    auth->error = SERVICE_ERROR_AUTH;
     notify(AUTH_WAITING, NULL, 0);
     esp_err_t err = refresh_access(auth, retry_after);
     if (err == ESP_ERR_NOT_FOUND)
         err = device_login(auth, retry_after);
+    if (err == ESP_OK)
+        auth->error = SERVICE_ERROR_NONE;
+    else if (auth->error == SERVICE_ERROR_AUTH_CONFIG && *retry_after < 300)
+        *retry_after = 300;
     notify(err == ESP_OK ? AUTH_SIGNED_IN : AUTH_RETRYING, NULL, 0);
     return err;
 }

@@ -6,10 +6,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "task_time.h"
 
 static EventGroupHandle_t wifi_events;
 static TaskHandle_t reconnect_task;
 #define CONNECTED_BIT BIT0
+#define DISCONNECTED_BIT BIT1
+#define STARTED_BIT BIT2
 
 static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *data)
 {
@@ -28,24 +31,59 @@ static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *da
         }
         xEventGroupClearBits(wifi_events, CONNECTED_BIT);
     }
-    if (reconnect_task)
-        xTaskNotifyGive(reconnect_task);
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START)
+        xEventGroupSetBits(wifi_events, STARTED_BIT);
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED)
+        xEventGroupSetBits(wifi_events, DISCONNECTED_BIT);
+}
+
+/* Wait for the driver to start before issuing any connection attempt. */
+static void wait_started(void)
+{
+    xEventGroupWaitBits(wifi_events, STARTED_BIT, pdTRUE, pdTRUE, portMAX_DELAY);
+}
+
+static void cancel_attempt(void)
+{
+    esp_err_t err = esp_wifi_disconnect();
+    if (err == ESP_OK &&
+        (xEventGroupWaitBits(wifi_events, DISCONNECTED_BIT, pdFALSE, pdFALSE, task_ticks_ms(5000)) &
+         DISCONNECTED_BIT))
+        return;
+    /* No disconnect acknowledgement: restart the station before retrying.
+     * Stop completes synchronously, preventing overlapping connection attempts. */
+    ESP_LOGW("wifi", "Connection cancellation failed; restarting station");
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    xEventGroupClearBits(wifi_events, CONNECTED_BIT | STARTED_BIT);
+    ESP_ERROR_CHECK(esp_wifi_start());
+    wait_started();
 }
 
 static void reconnect(void *unused)
 {
     unsigned backoff = 1;
+    wait_started();
     for (;;) {
-        if (wifi_is_connected()) {
-            backoff = 1;
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-            continue;
-        }
+        xEventGroupClearBits(wifi_events, DISCONNECTED_BIT);
         esp_err_t err = esp_wifi_connect();
-        if (err != ESP_OK)
+        EventBits_t result = 0;
+        if (err == ESP_OK) {
+            /* Association alone is insufficient; allow time for DHCP too. */
+            result = xEventGroupWaitBits(wifi_events, CONNECTED_BIT | DISCONNECTED_BIT, pdFALSE,
+                                         pdFALSE, task_ticks_ms(30000));
+            if (!(result & (CONNECTED_BIT | DISCONNECTED_BIT))) {
+                ESP_LOGW("wifi", "Connection/DHCP timed out after 30 seconds");
+                cancel_attempt();
+            }
+        } else {
             ESP_LOGW("wifi", "Connect attempt failed: %s", esp_err_to_name(err));
-        /* Notifications update connection state; an early failure must not bypass backoff. */
-        vTaskDelay(pdMS_TO_TICKS(backoff * 1000));
+            cancel_attempt();
+        }
+        if ((result & CONNECTED_BIT) && !(result & DISCONNECTED_BIT)) {
+            backoff = 1;
+            xEventGroupWaitBits(wifi_events, DISCONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+        }
+        vTaskDelay(task_ticks_ms(backoff * 1000));
         if (backoff < 30)
             backoff = backoff > 15 ? 30 : backoff * 2;
     }
