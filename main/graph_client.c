@@ -11,6 +11,7 @@
 #include "sdkconfig.h"
 #include "task_time.h"
 #include "wifi.h"
+#include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "graph";
@@ -80,6 +81,8 @@ static void poll_presence_task(void *unused)
                 } else {
                     presence_t presence = presence_from_json(root);
                     status.presence = presence;
+                    snprintf(status.activity, sizeof(status.activity), "%s",
+                             json_string(root, "activity"));
                     status.has_presence = true;
                     status.updated_at_us = esp_timer_get_time();
                     publish(SERVICE_READY);

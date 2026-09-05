@@ -76,3 +76,20 @@ retry no sooner than one minute without shortening a longer Retry-After.
 `service_error_t` separates safe diagnostic categories from raw server payloads;
 authentication owns its last category and the worker copies it into status.
 The existing sign-in page will consume richer worker status in the next stage.
+
+### Status dashboard and temporary LED override
+
+The main task publishes a complete app status/value snapshot to the HTTP module
+under its existing short critical section. Graph polling copies the received
+activity into a bounded 64-byte field; JSON serialization and browser textContent
+preserve it as text. The dashboard exposes last-success age, freshness, selected
+pattern and safe service-error categories, independently of OAuth sign-in state.
+
+The HTTP task accepts only a small JSON LED-test request with the per-boot random
+control token from the same-origin status response. No CORS permissions are
+advertised. This blocks ordinary cross-site form/fetch requests; it is not user
+authentication, and trusted LAN clients can read the token and operate tests.
+Main checks a ten-second monotonic override deadline each iteration and remains
+the only task feeding the LED mode queue. HTTP never touches the LED driver.
+Tests expire without browser timers or a follow-up request. Cancel clears the
+override; concurrent browser tests use the latest accepted request.

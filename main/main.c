@@ -53,6 +53,8 @@ void app_main(void)
             status = received;
         display_mode_t mode = app_display_mode(&status, wifi_is_connected(), esp_timer_get_time(),
                                                (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000);
+        mode = web_server_display(mode, esp_timer_get_time());
+        web_server_update(&status, wifi_is_connected(), mode);
         if (mode != previous) {
             ESP_ERROR_CHECK(leds_set_mode(mode));
             ESP_LOGI("main", "Display mode: %d", (int)mode);

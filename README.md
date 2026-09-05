@@ -163,8 +163,7 @@ resolution depends on your router; this firmware does not advertise mDNS.
 The page displays the current Microsoft user code and a sign-in link. Open the
 link, enter the code, and return to the page to see confirmation. Codes expire
 and are replaced automatically; saved authorization survives power loss. No
-redirect URI or confidential-client secret is needed. The page reports sign-in,
-not whether Graph presence polling has succeeded.
+redirect URI or confidential-client secret is needed. The dashboard reports sign-in separately from presence freshness and service errors.
 
 The server uses local HTTP on port 80 and exposes the temporary user code to
 other users of that network. Use a trusted home LAN and do not forward its port
@@ -194,3 +193,18 @@ Successful presence requests are scheduled on the configured interval rather
 than sleeping a full interval after each request. Slow requests skip missed
 slots; service failures and throttling use separate retry delays. The Wi-Fi
 worker waits up to 30 seconds for connection and DHCP before cancelling/retrying.
+
+## Frame dashboard
+
+Open the frame's local page to see Teams activity, last successful update,
+fresh/stale status, Wi-Fi connectivity, Microsoft sign-in, selected light pattern,
+polling interval, LED GPIO, brightness and uptime. Error messages distinguish
+clock synchronization, permissions, application registration and transient failures.
+A selected pattern reports software intent; it cannot detect unplugged LEDs.
+
+The LED test buttons override normal display for ten seconds on the device,
+then return to Teams automatically, even if the browser closes. Return to Teams
+cancels immediately. Yellow tests the first LED only, matching busy mode.
+Any trusted LAN client can operate the tests. The per-boot request token prevents
+ordinary cross-site submissions; it does not replace network access control.
+`/api/auth` remains available for compatibility; `/api/status` drives the dashboard.

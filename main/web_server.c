@@ -2,8 +2,11 @@
 #include "auth_client.h"
 #include "cJSON.h"
 #include "esp_http_server.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "protocol.h"
+#include "sdkconfig.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +17,29 @@ static struct {
     char code[33];
     int64_t deadline;
 } state;
+static app_status_t app = {.service = SERVICE_CONNECTING, .presence = PRESENCE_UNKNOWN};
+static bool connected;
+static display_mode_t displayed = DISPLAY_CONNECTING, test_mode;
+static int64_t test_deadline;
+static char control_token[33];
+
+void web_server_update(const app_status_t *status, bool online, display_mode_t display)
+{
+    portENTER_CRITICAL(&lock);
+    app = *status;
+    connected = online;
+    displayed = display;
+    portEXIT_CRITICAL(&lock);
+}
+
+display_mode_t web_server_display(display_mode_t normal, int64_t now_us)
+{
+    portENTER_CRITICAL(&lock);
+    display_mode_t mode = now_us < test_deadline ? test_mode : normal;
+    portEXIT_CRITICAL(&lock);
+    return mode;
+}
+
 extern const char page[] __asm__("_binary_auth_html_start");
 
 static void observe(auth_event_t event, const char *code, int64_t deadline)
@@ -43,7 +69,7 @@ static esp_err_t index_get(httpd_req_t *req)
     return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
 }
 
-static esp_err_t status_get(httpd_req_t *req)
+static cJSON *auth_json(void)
 {
     char code[33];
     auth_event_t event;
@@ -65,21 +91,133 @@ static esp_err_t status_get(httpd_req_t *req)
         !cJSON_AddNumberToObject(json, "expires_in",
                                  event == AUTH_CODE_READY ? (remaining + 999999) / 1000000 : 0)) {
         cJSON_Delete(json);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return NULL;
     }
-    char *body = cJSON_PrintUnformatted(json);
+    return json;
+}
+
+/* Takes ownership, including on allocation or socket failures. */
+static esp_err_t send_json(httpd_req_t *req, cJSON *json)
+{
+    char *body = json ? cJSON_PrintUnformatted(json) : NULL;
     cJSON_Delete(json);
+    headers(req);
     if (!body)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-    headers(req);
     httpd_resp_set_type(req, "application/json");
     esp_err_t err = httpd_resp_send(req, body, HTTPD_RESP_USE_STRLEN);
     free(body);
     return err;
 }
 
+static esp_err_t status_get(httpd_req_t *req)
+{
+    return send_json(req, auth_json());
+}
+
+static const char *label(const char *const *names, unsigned count, unsigned value)
+{
+    return value < count ? names[value] : "unknown";
+}
+#define LABEL(names, value) label(names, sizeof(names) / sizeof(names[0]), value)
+
+static esp_err_t dashboard_get(httpd_req_t *req)
+{
+    app_status_t current;
+    bool online;
+    display_mode_t display;
+    int64_t until;
+    portENTER_CRITICAL(&lock);
+    current = app;
+    online = connected;
+    display = displayed;
+    until = test_deadline;
+    portEXIT_CRITICAL(&lock);
+    int64_t now = esp_timer_get_time();
+    int64_t age =
+        current.has_presence && now >= current.updated_at_us ? now - current.updated_at_us : -1;
+    const char *const services[] = {"connecting", "clock", "authenticating", "polling",
+                                    "ready",      "error", "configuration"};
+    const char *const errors[] = {"none",        "network",     "clock",        "auth",
+                                  "auth_config", "auth_denied", "auth_expired", "storage",
+                                  "permission",  "throttled",   "response"};
+    const char *const displays[] = {"connecting", "authenticating", "unknown",
+                                    "green",      "yellow",         "red",
+                                    "rainbow",    "configuration"};
+    cJSON *json = auth_json();
+    if (!json || !cJSON_AddBoolToObject(json, "connected", online) ||
+        !cJSON_AddStringToObject(json, "service", LABEL(services, current.service)) ||
+        !cJSON_AddStringToObject(json, "error", LABEL(errors, current.error)) ||
+        !cJSON_AddStringToObject(json, "activity", current.has_presence ? current.activity : "") ||
+        !cJSON_AddStringToObject(json, "display", LABEL(displays, display)) ||
+        !cJSON_AddNumberToObject(json, "age_seconds", age < 0 ? -1 : age / 1000000) ||
+        !cJSON_AddBoolToObject(json, "fresh",
+                               online && age >= 0 &&
+                                   age < (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000) ||
+        !cJSON_AddNumberToObject(json, "poll_seconds", CONFIG_PRESENCE_POLL_SECONDS) ||
+        !cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000) ||
+        !cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) ||
+        !cJSON_AddNumberToObject(json, "brightness_percent", CONFIG_LED_BRIGHTNESS_PERCENT) ||
+        !cJSON_AddNumberToObject(json, "test_seconds",
+                                 until > now ? (until - now + 999999) / 1000000 : 0) ||
+        !cJSON_AddStringToObject(json, "control_token", control_token)) {
+        cJSON_Delete(json);
+        json = NULL;
+    }
+    return send_json(req, json);
+}
+
+static esp_err_t led_test_post(httpd_req_t *req)
+{
+    headers(req);
+    char supplied[sizeof(control_token)];
+    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
+        !control_token[0] || strcmp(supplied, control_token))
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
+    char body[65];
+    if (req->content_len <= 0 || req->content_len >= sizeof(body))
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid test request");
+    size_t received = 0;
+    while (received < req->content_len) {
+        int n = httpd_req_recv(req, body + received, req->content_len - received);
+        if (n <= 0)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
+        received += n;
+    }
+    body[received] = '\0';
+    response_buffer_t buffer = {.data = body, .length = received, .capacity = sizeof(body)};
+    cJSON *json = response_json(&buffer);
+    const char *name = json_string(json, "mode");
+    display_mode_t mode = DISPLAY_MODE_COUNT;
+    bool automatic = name && !strcmp(name, "auto");
+    if (name && !strcmp(name, "green"))
+        mode = DISPLAY_AVAILABLE;
+    else if (name && !strcmp(name, "yellow"))
+        mode = DISPLAY_BUSY;
+    else if (name && !strcmp(name, "red"))
+        mode = DISPLAY_DO_NOT_DISTURB;
+    else if (name && !strcmp(name, "blue"))
+        mode = DISPLAY_UNKNOWN;
+    else if (name && !strcmp(name, "rainbow"))
+        mode = DISPLAY_PLAY;
+    cJSON_Delete(json);
+    if (!automatic && mode == DISPLAY_MODE_COUNT)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown test mode");
+    int64_t until = automatic ? 0 : esp_timer_get_time() + 10000000;
+    portENTER_CRITICAL(&lock);
+    test_mode = mode;
+    test_deadline = until;
+    portEXIT_CRITICAL(&lock);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+}
+
 esp_err_t web_server_start(void)
 {
+    unsigned char random[16];
+    esp_fill_random(random, sizeof(random));
+    for (size_t i = 0; i < sizeof(random); ++i)
+        snprintf(control_token + 2 * i, 3, "%02x", random[i]);
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_open_sockets = 3;
     config.lru_purge_enable = true;
@@ -92,6 +230,8 @@ esp_err_t web_server_start(void)
     const httpd_uri_t routes[] = {
         {.uri = "/", .method = HTTP_GET, .handler = index_get},
         {.uri = "/api/auth", .method = HTTP_GET, .handler = status_get},
+        {.uri = "/api/status", .method = HTTP_GET, .handler = dashboard_get},
+        {.uri = "/api/led-test", .method = HTTP_POST, .handler = led_test_post},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(server, &routes[i]);

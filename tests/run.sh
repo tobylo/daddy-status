@@ -25,7 +25,7 @@ run_test led_worker tests/test_led_worker.c main/ledcontrol.c main/led_frame.c m
 run_test led_coarse_ticks -DTEST_FREERTOS_HZ=1 tests/test_led_worker.c \
     main/ledcontrol.c main/led_frame.c main/diagnostics.c
 run_test http tests/test_http.c main/http_transport.c main/protocol.c "$CJSON/cJSON.c"
-run_test web tests/test_web.c "$CJSON/cJSON.c"
+run_test web tests/test_web.c main/protocol.c "$CJSON/cJSON.c"
 run_test graph_worker tests/test_graph_worker.c main/protocol.c main/presence.c \
     main/app_state.c main/diagnostics.c "$CJSON/cJSON.c"
 run_test wifi_worker tests/test_wifi_worker.c

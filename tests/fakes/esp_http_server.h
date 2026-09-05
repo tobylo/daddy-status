@@ -5,7 +5,7 @@
 #include <stddef.h>
 typedef void *httpd_handle_t;
 typedef struct {
-    int unused;
+    size_t content_len;
 } httpd_req_t;
 typedef struct {
     const char *uri;
@@ -19,6 +19,9 @@ typedef struct {
 } httpd_config_t;
 #define HTTPD_DEFAULT_CONFIG() ((httpd_config_t){0})
 #define HTTP_GET 0
+#define HTTP_POST 1
+#define HTTPD_403_FORBIDDEN 403
+#define HTTPD_400_BAD_REQUEST 400
 #define HTTPD_RESP_USE_STRLEN -1
 #define HTTPD_500_INTERNAL_SERVER_ERROR 500
 esp_err_t httpd_start(httpd_handle_t *, const httpd_config_t *);
@@ -29,3 +32,6 @@ esp_err_t httpd_resp_set_type(httpd_req_t *, const char *);
 esp_err_t httpd_resp_send(httpd_req_t *, const char *, int);
 esp_err_t httpd_resp_send_err(httpd_req_t *, int, const char *);
 #endif
+
+esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *, const char *, char *, size_t);
+int httpd_req_recv(httpd_req_t *, char *, size_t);
