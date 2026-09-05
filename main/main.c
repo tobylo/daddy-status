@@ -10,6 +10,7 @@
 #include "protocol.h"
 #include "sdkconfig.h"
 #include "task_time.h"
+#include "web_server.h"
 #include "wifi.h"
 
 static void nvs_init(void)
@@ -39,6 +40,7 @@ void app_main(void)
     QueueHandle_t queue = xQueueCreate(1, sizeof(app_status_t));
     ESP_ERROR_CHECK(queue ? ESP_OK : ESP_ERR_NO_MEM);
     wifi_init();
+    ESP_ERROR_CHECK(web_server_start());
     ESP_ERROR_CHECK(graph_client_init(queue));
     app_status_t status = {.service = SERVICE_CONNECTING, .presence = PRESENCE_UNKNOWN};
     display_mode_t previous = DISPLAY_MODE_COUNT;

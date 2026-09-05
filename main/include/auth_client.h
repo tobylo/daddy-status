@@ -9,6 +9,12 @@ typedef struct {
     int64_t access_deadline;
 } auth_client_t;
 
+typedef enum { AUTH_WAITING, AUTH_CODE_READY, AUTH_SIGNED_IN, AUTH_RETRYING } auth_event_t;
+/* Register before starting the worker. Callback must copy borrowed code synchronously.
+ * Only user_code is published; opaque device/access/refresh tokens stay private. */
+typedef void (*auth_observer_t)(auth_event_t event, const char *user_code, int64_t deadline);
+void auth_client_observe(auth_observer_t observer);
+
 /* Zero-initialize; a single worker owns each instance and its token. */
 bool auth_client_ready(const auth_client_t *auth);
 esp_err_t auth_client_ensure(auth_client_t *auth, unsigned *retry_after);

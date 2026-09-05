@@ -19,3 +19,10 @@ Hardware acceptance includes reconnects, token revocation, rapid display changes
 and extended heap/stack observation. A compile or host test does not establish
 hardware acceptance. Retain the original classic ESP32 and two WS2812 LEDs unless
 the owner requests a change. Do not store real credentials in source control.
+
+## Follow-up: browser authentication
+
+1. Serve a small local page and publish device-code sign-in state without tokens.
+2. Verify expiry, success/error cleanup, startup failures, and target compilation;
+   document discovery and picture-frame acceptance checks.
+3. Open one focused PR, address valid CodeRabbit findings, and merge after CI.

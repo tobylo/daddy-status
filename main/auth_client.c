@@ -14,6 +14,17 @@
 #include <strings.h>
 
 static const char *TAG = "auth";
+static auth_observer_t observer;
+void auth_client_observe(auth_observer_t callback)
+{
+    observer = callback;
+}
+static void notify(auth_event_t event, const char *code, int64_t deadline)
+{
+    if (observer)
+        observer(event, code, deadline);
+}
+
 static const char *SCOPE = "https://graph.microsoft.com/Presence.Read offline_access";
 
 static esp_err_t accept_tokens(auth_client_t *auth, const cJSON *root, bool refreshing)
@@ -119,18 +130,22 @@ static esp_err_t device_login(auth_client_t *auth, unsigned *retry_after)
     cJSON *root = err == ESP_OK ? response_json(&response.body) : NULL;
     const char *code = json_string(root, "device_code");
     const char *message = json_string(root, "message");
+    const char *user_code = json_string(root, "user_code");
     unsigned expires = 0, interval = 5;
     char *device = NULL;
     if (err == ESP_OK && response.status == 200 && code && strlen(code) <= TOKEN_LIMIT && message &&
-        json_seconds(root, "expires_in", &expires)) {
+        user_code && strlen(user_code) <= 32 && json_seconds(root, "expires_in", &expires)) {
         if (cJSON_HasObjectItem(root, "interval") && !json_seconds(root, "interval", &interval)) {
             err = ESP_ERR_INVALID_RESPONSE;
         } else {
             device = strdup(code);
             if (!device)
                 err = ESP_ERR_NO_MEM;
-            else
+            else {
                 ESP_LOGI(TAG, "%s", message);
+                notify(AUTH_CODE_READY, user_code,
+                       esp_timer_get_time() + (int64_t)expires * 1000000);
+            }
         }
     } else if (err == ESP_OK)
         err = ESP_ERR_INVALID_RESPONSE;
@@ -202,8 +217,10 @@ esp_err_t auth_client_ensure(auth_client_t *auth, unsigned *retry_after)
     *retry_after = 0;
     if (auth_client_ready(auth))
         return ESP_OK;
+    notify(AUTH_WAITING, NULL, 0);
     esp_err_t err = refresh_access(auth, retry_after);
     if (err == ESP_ERR_NOT_FOUND)
         err = device_login(auth, retry_after);
+    notify(err == ESP_OK ? AUTH_SIGNED_IN : AUTH_RETRYING, NULL, 0);
     return err;
 }

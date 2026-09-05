@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Daddy Status · Sign in</title>
+<style>
+body{font:18px/1.5 system-ui,sans-serif;background:#f2f4f6;color:#162532;margin:0;padding:24px}main{max-width:480px;margin:8vh auto;background:white;padding:32px;border-radius:20px;box-shadow:0 8px 32px #16253214}h1{font-size:28px;margin-top:0}code{display:block;font-size:32px;letter-spacing:3px;margin:24px 0;font-weight:bold}a{display:inline-block;background:#145cbd;color:white;padding:12px 20px;border-radius:8px;text-decoration:none}small{display:block;margin-top:24px;color:#526272}[hidden]{display:none}
+</style>
+<main>
+<h1>Daddy Status</h1>
+<p id="status" role="status" aria-live="polite">Connecting to your frame…</p>
+<section id="login" hidden>
+<p>Open Microsoft sign-in and enter this code:</p>
+<code id="code"></code>
+<a href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">Sign in with Microsoft ↗</a>
+<p id="expiry"></p>
+</section>
+<noscript>Enable JavaScript to see the live sign-in code.</noscript>
+<small>Use the Microsoft work account whose presence should appear on the frame. Your password is entered on Microsoft’s website.</small>
+</main>
+<script>
+const statusText=document.getElementById('status');
+const login=document.getElementById('login');
+const code=document.getElementById('code');
+const expiry=document.getElementById('expiry');
+let deadline=0;
+function clearCode(){login.hidden=true;code.textContent='';deadline=0;}
+async function update(){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),5000);
+  try {
+    const response=await fetch('/api/auth',{cache:'no-store',signal:controller.signal});
+    if(!response.ok)throw new Error('Unavailable');
+    const data=await response.json();
+    clearCode();
+    if(data.state==='code' && data.expires_in>0){
+      code.textContent=data.user_code;
+      deadline=Date.now()+data.expires_in*1000;
+      login.hidden=false;
+      statusText.textContent='Your frame needs you to sign in.';
+      tick();
+    }else{
+      statusText.textContent=data.state==='signed_in'?'Signed in. You can close this page.':data.state==='retrying'?'Sign-in did not complete. The frame will retry automatically.':'Waiting for the frame to connect to Microsoft…';
+    }
+  }catch(error){clearCode();statusText.textContent='Cannot reach the frame. Check that you are on the same Wi-Fi. Reconnecting…';}
+  clearTimeout(timeout);
+  setTimeout(update,3000);
+}
+function tick(){
+  if(!deadline)return;
+  const seconds=Math.max(0,Math.ceil((deadline-Date.now())/1000));
+  if(!seconds){clearCode();statusText.textContent='Code expired. Waiting for a new code…';return;}
+  expiry.textContent='Code expires in '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
+}
+setInterval(tick,1000);
+update();
+</script>
+</html>

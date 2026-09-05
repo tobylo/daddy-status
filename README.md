@@ -34,7 +34,7 @@ port alone does not identify the attached board.
 3. Add Microsoft Graph **delegated** `Presence.Read`. The firmware also requests
    `offline_access` to obtain a refresh token. Complete user/admin consent as
    required by your organization. Tenant policy must allow device-code login.
-4. During first login, use the URL/code printed on the serial monitor and sign in
+4. During first login, open the frame’s local web page (see below) and sign in
    as the user whose presence should drive the light. The [device-code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)
    can return pending, slowdown, expired, or denied responses; these are handled
    without an unbounded token-polling loop.
@@ -92,7 +92,7 @@ provisioning.
 | One yellow LED | Busy |
 | Blinking red | Do not disturb, meeting, call, or presenting |
 | Rainbow | Off work, offline, or out of office |
-| Blinking yellow | Initial authentication in progress; check serial monitor |
+| Blinking yellow | Initial authentication in progress; open the frame’s web page |
 | Blinking blue | Connecting, synchronizing clock, unknown, or stale presence |
 | Solid magenta | Invalid configuration; check serial monitor |
 
@@ -109,7 +109,7 @@ project's behavior and are centralized in `main/presence.c`.
   retry with backoff; numeric `Retry-After` values are respected up to a 24-hour
   operational maximum. Larger values are capped to prevent an effectively
   permanent pause.
-- **Yellow:** finish device login on the serial monitor. Expired/denied device
+- **Yellow:** finish device login on the frame’s web page. Expired/denied device
   codes finish that attempt; the worker can start another attempt after backoff.
 - **Magenta:** correct missing/invalid IDs, Wi-Fi SSID, NTP server, or polling/stale
   intervals in `menuconfig`, rebuild, and flash.
@@ -151,3 +151,23 @@ locally with bounded allocation and byte-wise writes.
 ## Original demo
 
 [![demo](https://img.youtube.com/vi/txYKa6VPBUU/0.jpg)](https://www.youtube.com/watch?v=txYKa6VPBUU)
+
+## Sign in without opening the picture frame
+
+On a phone or computer on the same Wi-Fi, open `http://<frame-ip>/`. Find the
+frame in your router’s connected-device list under the DHCP hostname
+`daddy-status`; reserve its address there for a stable bookmark. The IP address
+is also logged at connection time if a serial monitor is available. Hostname
+resolution depends on your router; this firmware does not advertise mDNS.
+
+The page displays the current Microsoft user code and a sign-in link. Open the
+link, enter the code, and return to the page to see confirmation. Codes expire
+and are replaced automatically; saved authorization survives power loss. No
+redirect URI or confidential-client secret is needed. The page reports sign-in,
+not whether Graph presence polling has succeeded.
+
+The server uses local HTTP on port 80 and exposes the temporary user code to
+other users of that network. Use a trusted home LAN and do not forward its port
+to the internet. Microsoft passwords are entered only on Microsoft’s HTTPS site;
+access, refresh, and opaque device tokens are never served. Responses are not
+cached. Wi-Fi credentials and Entra application settings still use menuconfig.

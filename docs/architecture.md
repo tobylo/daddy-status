@@ -45,3 +45,14 @@ refresh alone never means "available".
 The LED worker is also compiled against fake queue and driver interfaces to test
 initialization cleanup, latest-mode delivery, retry after output failure, and
 mode changes within the same task. This checks control flow, not RTOS scheduling.
+
+### Browser authentication
+
+`web_server.c` serves an embedded, dependency-free page and a read-only JSON
+endpoint using ESP-IDF HTTP Server. The authentication worker publishes only
+its event, user code, and monotonic deadline through a synchronous observer.
+A short critical section protects copies shared with the HTTP task; network
+calls and JSON allocation happen outside it. Expired codes are withheld even
+if the worker is waiting for Wi-Fi. Terminal results clear the code. Three
+HTTP client sockets and five-second send/receive timeouts bound server use.
+The existing network worker remains the only owner of OAuth tokens and polling.
