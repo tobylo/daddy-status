@@ -1,0 +1,17 @@
+#ifndef DADDY_SERVICE_ERROR_H
+#define DADDY_SERVICE_ERROR_H
+/* Safe categories for diagnostics/UI; never include server payloads or tokens. */
+typedef enum {
+    SERVICE_ERROR_NONE,
+    SERVICE_ERROR_NETWORK,
+    SERVICE_ERROR_CLOCK,
+    SERVICE_ERROR_AUTH,
+    SERVICE_ERROR_AUTH_CONFIG,
+    SERVICE_ERROR_AUTH_DENIED,
+    SERVICE_ERROR_AUTH_EXPIRED,
+    SERVICE_ERROR_STORAGE,
+    SERVICE_ERROR_PERMISSION,
+    SERVICE_ERROR_THROTTLED,
+    SERVICE_ERROR_RESPONSE,
+} service_error_t;
+#endif

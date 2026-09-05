@@ -107,3 +107,19 @@ scripted task, event, time and transport boundaries. They cover association
 versus DHCP state, failed connection backoff, clock wait, 401 token recovery,
 403 denial, 429 Retry-After, preserved freshness during errors and recovery.
 They do not model simultaneous FreeRTOS scheduling or radio/TCP behaviour.
+
+## Stage 2 hardware checkpoint — pending
+
+After flashing the connection/polling changes, verify before proceeding:
+
+1. Restart: reconnect to Wi-Fi and reuse saved Microsoft login; LEDs reflect Teams.
+2. Toggle the frame's Wi-Fi access off for at least 45 seconds, then restore it:
+   blue during loss, automatic reconnection, and correct presence afterward.
+3. Toggle Available/DND several times: eventual green/red and no animation freeze.
+   Poll starts should be about 10 seconds apart, plus Microsoft propagation delay.
+4. Leave running for at least ten minutes; inspect logs for resets, repeated
+   connecting-in-progress errors, and LED/transport errors.
+
+Host tests cover timeout cancellation and station restart when cancellation is
+not acknowledged; that rare path remains dependent on real SDK event delivery.
+No router configuration or credentials are changed by this stage.

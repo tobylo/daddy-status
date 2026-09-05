@@ -56,3 +56,23 @@ calls and JSON allocation happen outside it. Expired codes are withheld even
 if the worker is waiting for Wi-Fi. Terminal results clear the code. Three
 HTTP client sockets and five-second send/receive timeouts bound server use.
 The existing network worker remains the only owner of OAuth tokens and polling.
+
+### Connection and request timing
+
+Only the Wi-Fi reconnect task initiates connections. Driver start, disconnect,
+and IP-ready events are retained in event-group bits, so events arriving before
+or during a wait are not lost. Association is logged but does not mark the
+network ready. Each attempt has 30 seconds to obtain an IP; on timeout the task
+cancels it and waits up to five seconds for disconnect acknowledgement. If that
+fails, it stops/starts the station and waits for its start event before retrying.
+Backoff grows from one to 30 seconds and resets after an IP-ready connection.
+Unexpected stop/start SDK failures retain the application's fatal-error policy.
+
+Successful Graph requests schedule the next start on a monotonic interval grid
+relative to that cycle's start. Requests that overrun a slot skip it; retries
+continue to use exponential delay and Retry-After. Authentication configuration
+failures retry no sooner than five minutes; permission-denied Graph requests
+retry no sooner than one minute without shortening a longer Retry-After.
+`service_error_t` separates safe diagnostic categories from raw server payloads;
+authentication owns its last category and the worker copies it into status.
+The existing sign-in page will consume richer worker status in the next stage.

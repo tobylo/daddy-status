@@ -220,6 +220,27 @@ static void revocation_and_transient(void)
     assert(!strcmp(stored, "keep-me"));
 }
 
+static void configuration_failure(void)
+{
+    const char *codes[] = {"invalid_client", "invalid_scope", "unauthorized_client"};
+    for (unsigned i = 0; i < 3; i++) {
+        char body[96];
+        snprintf(body, sizeof(body), "{\"error\":\"%s\"}", codes[i]);
+        const exchange_t steps[] = {{"/token", 400, body, ESP_OK, 0}};
+        reset(steps, 1);
+        stored = strdup("keep-me");
+        auth_client_t auth = {0};
+        unsigned retry = 0;
+        assert(auth_client_ensure(&auth, &retry) != ESP_OK);
+        assert(auth.error == SERVICE_ERROR_AUTH_CONFIG && retry == 300);
+        assert(!strcmp(stored, "keep-me"));
+        const exchange_t initial[] = {{"/devicecode", 400, body, ESP_OK, 0}};
+        reset(initial, 1);
+        assert(auth_client_ensure(&auth, &retry) != ESP_OK);
+        assert(auth.error == SERVICE_ERROR_AUTH_CONFIG && retry == 300);
+    }
+}
+
 static void invalid_and_missing_storage(void)
 {
     reset(NULL, 0);
@@ -281,6 +302,7 @@ static void rejected_tokens_and_deadlines(void)
     auth_client_t auth = {0};
     unsigned retry;
     assert(auth_client_ensure(&auth, &retry) == ESP_ERR_TIMEOUT && request_count == 1);
+    assert(auth.error == SERVICE_ERROR_AUTH_EXPIRED);
     const exchange_t throttled[] = {{"/devicecode", 200, DEVICE, ESP_OK, 0},
                                     {"/token", 429, "{}", ESP_OK, 1200}};
     reset(throttled, 2);
@@ -321,6 +343,7 @@ int main(void)
     device_and_refresh();
     assert(code_events == 1 && last_event == AUTH_SIGNED_IN);
     revocation_and_transient();
+    configuration_failure();
     invalid_and_missing_storage();
     terminal_auth_errors();
     rejected_tokens_and_deadlines();

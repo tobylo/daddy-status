@@ -22,7 +22,7 @@ static const struct {
     {200, "{\"activity\":\"Available\"}", 0, ESP_OK},
     {401, "{}", 0, ESP_OK},
     {200, "{\"activity\":\"Busy\"}", 0, ESP_OK},
-    {403, "{}", 0, ESP_OK},
+    {403, "{}", 90, ESP_OK},
     {429, "{}", 120, ESP_OK},
     {0, "", 0, ESP_FAIL},
     {200, "{\"activity\":\"Busy\"}", 0, ESP_OK},
@@ -140,7 +140,14 @@ int main(void)
         }
     }
     assert(ready == 3 && errors == 4);
-    const unsigned expected[] = {10, 2, 0, 10, 60, 0, 60, 60, 0, 8, 0, 10};
+    unsigned permission = 0, throttle = 0, network = 0;
+    for (unsigned i = 0; i < snapshot_count; i++) {
+        permission += snapshots[i].error == SERVICE_ERROR_PERMISSION;
+        throttle += snapshots[i].error == SERVICE_ERROR_THROTTLED;
+        network += snapshots[i].error == SERVICE_ERROR_NETWORK;
+    }
+    assert(permission == 1 && throttle == 1 && network == 1);
+    const unsigned expected[] = {8, 2, 0, 8, 60, 30, 0, 60, 60, 0, 8, 0, 8};
     assert(delay_count == sizeof(expected) / sizeof(expected[0]));
     for (unsigned i = 0; i < delay_count; ++i)
         assert(delays[i] == pdMS_TO_TICKS(expected[i] * 1000));
