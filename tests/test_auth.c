@@ -30,7 +30,8 @@ static const exchange_t *script;
 static size_t script_count, request_count;
 
 #define DEVICE                                                                                     \
-    "{\"device_code\":\"a+b&c\",\"message\":\"Log in\",\"interval\":5,\"expires_in\":900}"
+    "{\"device_code\":\"a+b&c\",\"user_code\":\"ABCD-EFGH\",\"message\":\"Log "                    \
+    "in\",\"interval\":5,\"expires_in\":900}"
 #define TOKENS                                                                                     \
     "{\"access_token\":\"access\",\"refresh_token\":\"rotated\",\"token_type\":\"Bearer\","        \
     "\"expires_in\":3600}"
@@ -155,6 +156,20 @@ static void reset(const exchange_t *steps, size_t count)
     script_count = count;
 }
 
+static auth_event_t last_event;
+static unsigned code_events;
+static void observe_auth(auth_event_t event, const char *code, int64_t deadline)
+{
+    last_event = event;
+    if (event == AUTH_CODE_READY) {
+        assert(code && !strcmp(code, "ABCD-EFGH"));
+        assert(deadline > now);
+        ++code_events;
+    } else {
+        assert(!code && !deadline);
+    }
+}
+
 static void device_and_refresh(void)
 {
     const exchange_t steps[] = {
@@ -258,10 +273,10 @@ static void rejected_tokens_and_deadlines(void)
         assert(auth_client_ensure(&auth, &retry) == ESP_ERR_INVALID_RESPONSE);
         assert(!auth.access_token && !strcmp(stored, "keep") && request_count == 1);
     }
-    const exchange_t expired[] = {
-        {"/devicecode", 200,
-         "{\"device_code\":\"a+b&c\",\"message\":\"Login\",\"interval\":5,\"expires_in\":5}",
-         ESP_OK, 0}};
+    const exchange_t expired[] = {{"/devicecode", 200,
+                                   "{\"device_code\":\"a+b&c\",\"user_code\":\"ABCD-EFGH\","
+                                   "\"message\":\"Login\",\"interval\":5,\"expires_in\":5}",
+                                   ESP_OK, 0}};
     reset(expired, 1);
     auth_client_t auth = {0};
     unsigned retry;
@@ -302,11 +317,14 @@ static void presence_mapping(void)
 
 int main(void)
 {
+    auth_client_observe(observe_auth);
     device_and_refresh();
+    assert(code_events == 1 && last_event == AUTH_SIGNED_IN);
     revocation_and_transient();
     invalid_and_missing_storage();
     terminal_auth_errors();
     rejected_tokens_and_deadlines();
+    assert(last_event == AUTH_RETRYING);
     presence_mapping();
     reset(NULL, 0);
     task_wait_seconds(121);

@@ -31,3 +31,13 @@ jobs:
         if: matrix.configuration == 'default'
         shell: bash
         run: tests/run.sh
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node tests/test_browser.mjs

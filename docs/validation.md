@@ -54,3 +54,23 @@ when running these checks. Never flash a port solely because it is detected.
 Live Microsoft authentication, TLS negotiation, flash persistence under power
 loss, Wi-Fi/RMT timing, and the 24-hour soak remain unverified until these checks
 are performed on the intended hardware/account.
+
+### Browser sign-in acceptance (hardware not yet performed)
+
+- Find `daddy-status` in the router and open its IP from a phone on the same LAN.
+- Complete first sign-in through Microsoft; verify confirmation and presence LEDs.
+- Let a code expire and deny a login; verify replacement and removal of old codes.
+- Disconnect Wi-Fi while the page is open; verify stale code removal and recovery.
+- Reboot after login; verify stored authorization works without a new code.
+- Check two browsers simultaneously and monitor heap during repeated polling.
+
+Host tests cover server startup/route failure cleanup, JSON escaping and fields,
+borrowed-code ownership, exact expiry boundaries, success/error clearing, and
+production authentication observer events. They do not simulate the TCP stack
+or actual FreeRTOS concurrency.
+
+`node tests/test_browser.mjs` exercises the embedded page's actual script using
+Node's built-in VM and a minimal DOM/fetch harness, including countdown expiry,
+login confirmation, literal code rendering, network loss, and recovery. CI runs
+this separately from the sanitized C suites. Visual layout and real browser/TCP
+behavior remain part of hardware acceptance.
