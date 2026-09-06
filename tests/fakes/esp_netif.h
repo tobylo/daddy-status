@@ -15,3 +15,5 @@ typedef struct {
 esp_err_t esp_netif_init(void);
 esp_netif_t *esp_netif_create_default_wifi_sta(void);
 esp_err_t esp_netif_set_hostname(esp_netif_t *, const char *);
+
+esp_netif_t *esp_netif_create_default_wifi_ap(void);

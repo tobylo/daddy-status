@@ -149,3 +149,34 @@ The captured excerpt confirms subsequent polling, not a completed 24-hour soak.
 Host coverage checks the production dashboard and POST handlers, split/bounded
 bodies, missing/incorrect control tokens, exact device-side test expiry, explicit
 cancellation, permission/freshness reporting, and browser action/recovery flows.
+
+### Stage 3 hardware results — accepted 2026-09-07
+
+Firmware 4df28fb was flashed to the frame after bypassing a dock USB controller
+failure. The dashboard responded on the LAN, saved Microsoft sign-in recovered,
+and fresh presence was reported with GPIO13 and a ten-second polling interval.
+The owner confirmed the requested LED button, expiry and return-to-Teams checks
+worked and approved proceeding. A controlled dashboard outage and extended soak
+were not separately confirmed in this checkpoint.
+
+
+## Stage 4 hardware checkpoint — pending
+
+- Save a brightness or timing change, reload after restart, and verify it persists
+  and saved Microsoft sign-in still works. Restore the desired 10-second interval.
+- Submit invalid GUIDs/ranges and confirm a rejection without restart or change.
+- Save an unavailable SSID, wait three minutes, and verify rollback/reconnection
+  to the previous network. Also interrupt a trial with a power cycle.
+- Block the known SSID for over three minutes. Join Daddy-Status-Setup using the
+  private setup password, open 192.168.4.1 and verify settings are accessible.
+  Restore station Wi-Fi and verify the setup network disappears.
+- Reset Microsoft sign-in, verify settings remain, complete device-code login,
+  and confirm presence resumes. A tenant/client change must require new sign-in.
+- Observe free heap/task stack and reconnect stability while using both interfaces.
+
+Host tests cover settings validation, password redaction/retention, failed NVS
+writes, candidate promotion, timeout/interrupted-trial rollback, reset intent and
+corrupt-record fallback. Wi-Fi tests check AP timing, WPA2 setup before start and
+shutdown on station connection. Browser tests cover form loading, rejected saves,
+request tokens and restart feedback. Physical flash power loss and radio/AP
+behavior require the checkpoint above; compilation and mocks cannot prove them.

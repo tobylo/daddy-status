@@ -11,7 +11,8 @@ The remaining boundaries are:
 | `token_storage` | NVS persistence, legacy access-token removal, storage errors |
 | `protocol` | Byte-wise form encoding, response buffers, checked JSON fields |
 | `presence` | Pure mapping of Graph activities to application presence |
-| `wifi` | Station setup and connection events |
+| `wifi` | Station connection events and password-protected recovery AP |
+| `settings` | Immutable boot snapshot, versioned NVS record, trial/rollback and reset intent |
 | `app_state` | Pure display policy, including freshness and connectivity |
 | `led_frame` | Pure RGB frame generation and animation timing |
 | `ledcontrol` | One persistent task that owns the LED driver |
@@ -75,7 +76,7 @@ failures retry no sooner than five minutes; permission-denied Graph requests
 retry no sooner than one minute without shortening a longer Retry-After.
 `service_error_t` separates safe diagnostic categories from raw server payloads;
 authentication owns its last category and the worker copies it into status.
-The existing sign-in page will consume richer worker status in the next stage.
+The dashboard consumes these categories independently of the sign-in state.
 
 ### Status dashboard and temporary LED override
 
@@ -93,3 +94,37 @@ Main checks a ten-second monotonic override deadline each iteration and remains
 the only task feeding the LED mode queue. HTTP never touches the LED driver.
 Tests expire without browser timers or a follow-up request. Cancel clears the
 override; concurrent browser tests use the latest accepted request.
+
+
+### Saved settings and recovery
+
+Settings initialize after NVS and before all workers. A versioned blob contains
+active/candidate settings, pending/tried markers and authorization-reset intent.
+The module validates bounded strings, GUIDs and numeric ranges before writes.
+Invalid stored records fall back to compiled defaults; invalid compiled defaults
+fall back to empty recovery settings. General NVS I/O failures retain the fatal
+startup policy. The boot snapshot is immutable; all modules read it without
+runtime mutation. A mutex serializes HTTP mutations and main-task trial checks;
+flash writes do not run in critical sections.
+
+A save stages a candidate and schedules restart. Boot persists the tried marker
+before exposing a candidate to workers. Main promotes it after DHCP success, or
+restarts after three minutes to roll back; promotion write failures retry at
+most every five seconds within that deadline. An interrupted trial also rolls
+back. This checks station reachability, not Graph/NTP correctness. NVS's blob
+storage is the persistence boundary; host mocks cannot establish physical
+power-loss guarantees.
+
+Reset requests and identity changes persist reset intent. Boot erases saved
+authorization before starting the sole OAuth worker, then clears that intent;
+a failed erase prevents startup. Rollback across identities also erases tokens.
+The settings HTTP task never races the worker by erasing tokens in a live session.
+
+The recovery AP's WPA2 configuration is installed before Wi-Fi starts, while
+its interface is inactive. Main enables AP+station mode after three minutes
+without an IP (immediately for empty SSID) and disables AP on connection.
+The station worker continues retrying. Empty SSID skips attempts to avoid
+repeated station restarts disrupting provisioning. The main task has a 6 KiB stack for NVS transitions; the HTTP server has an 8 KiB
+stack and limits settings bodies to 1536 bytes. Recovery uses a private compiled
+password, never an open AP; the trusted-LAN request-token model also applies to
+settings and sign-in reset.

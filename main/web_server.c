@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "protocol.h"
 #include "sdkconfig.h"
+#include "settings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -153,11 +154,11 @@ static esp_err_t dashboard_get(httpd_req_t *req)
         !cJSON_AddNumberToObject(json, "age_seconds", age < 0 ? -1 : age / 1000000) ||
         !cJSON_AddBoolToObject(json, "fresh",
                                online && age >= 0 &&
-                                   age < (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000) ||
-        !cJSON_AddNumberToObject(json, "poll_seconds", CONFIG_PRESENCE_POLL_SECONDS) ||
+                                   age < (int64_t)settings_get()->stale_seconds * 1000000) ||
+        !cJSON_AddNumberToObject(json, "poll_seconds", settings_get()->poll_seconds) ||
         !cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000) ||
         !cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) ||
-        !cJSON_AddNumberToObject(json, "brightness_percent", CONFIG_LED_BRIGHTNESS_PERCENT) ||
+        !cJSON_AddNumberToObject(json, "brightness_percent", settings_get()->brightness) ||
         !cJSON_AddNumberToObject(json, "test_seconds",
                                  until > now ? (until - now + 999999) / 1000000 : 0) ||
         !cJSON_AddStringToObject(json, "control_token", control_token)) {
@@ -212,6 +213,49 @@ static esp_err_t led_test_post(httpd_req_t *req)
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t settings_get_handler(httpd_req_t *req)
+{
+    return send_json(req, settings_json());
+}
+
+static esp_err_t settings_post_handler(httpd_req_t *req)
+{
+    headers(req);
+    char supplied[sizeof(control_token)];
+    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
+        !control_token[0] || strcmp(supplied, control_token))
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
+    char body[1537];
+    if (!req->content_len || req->content_len >= sizeof(body))
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid settings request");
+    size_t received = 0;
+    while (received < req->content_len) {
+        int n = httpd_req_recv(req, body + received, req->content_len - received);
+        if (n <= 0)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
+        received += n;
+    }
+    body[received] = 0;
+    response_buffer_t buffer = {.data = body, .length = received, .capacity = sizeof(body)};
+    cJSON *json = response_json(&buffer);
+    frame_settings_t value;
+    const char *action = json_string(json, "action");
+    bool reset = action && !strcmp(action, "reset_auth");
+    bool valid = reset || (action && !strcmp(action, "save") && settings_parse(json, &value));
+    cJSON_Delete(json);
+    memset(body, 0, sizeof(body));
+    if (!valid)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Check settings fields and ranges");
+    esp_err_t err = reset ? settings_reset_auth() : settings_save(&value);
+    memset(&value, 0, sizeof(value));
+    if (err != ESP_OK)
+        return httpd_resp_send_err(
+            req, HTTPD_500_INTERNAL_SERVER_ERROR,
+            "Settings not confirmed: storage failure or restart/trial in progress");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+}
+
 esp_err_t web_server_start(void)
 {
     unsigned char random[16];
@@ -219,6 +263,7 @@ esp_err_t web_server_start(void)
     for (size_t i = 0; i < sizeof(random); ++i)
         snprintf(control_token + 2 * i, 3, "%02x", random[i]);
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.stack_size = 8192;
     config.max_open_sockets = 3;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
@@ -231,6 +276,8 @@ esp_err_t web_server_start(void)
         {.uri = "/", .method = HTTP_GET, .handler = index_get},
         {.uri = "/api/auth", .method = HTTP_GET, .handler = status_get},
         {.uri = "/api/status", .method = HTTP_GET, .handler = dashboard_get},
+        {.uri = "/api/settings", .method = HTTP_GET, .handler = settings_get_handler},
+        {.uri = "/api/settings", .method = HTTP_POST, .handler = settings_post_handler},
         {.uri = "/api/led-test", .method = HTTP_POST, .handler = led_test_post},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {

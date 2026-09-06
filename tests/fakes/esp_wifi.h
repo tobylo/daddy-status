@@ -11,6 +11,10 @@ typedef struct {
         char password[64];
         unsigned listen_interval;
     } sta;
+    struct {
+        char ssid[32], password[64];
+        unsigned ssid_len, channel, max_connection, authmode;
+    } ap;
 } wifi_config_t;
 typedef struct {
     uint8_t channel;
@@ -21,6 +25,9 @@ typedef struct {
 } wifi_event_sta_disconnected_t;
 #define WIFI_STORAGE_RAM 0
 #define WIFI_MODE_STA 0
+#define WIFI_MODE_APSTA 1
+#define WIFI_IF_AP 1
+#define WIFI_AUTH_WPA2_PSK 3
 #define WIFI_IF_STA 0
 #define WIFI_PS_NONE 0
 #define ESP_ERR_WIFI_CONN 0x3007

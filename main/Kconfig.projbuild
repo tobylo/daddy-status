@@ -46,6 +46,15 @@ endmenu
 
 menu "WiFi setup"
 
+    config SETUP_PASSWORD
+        string "Recovery Wi-Fi password (12-63 characters; empty disables recovery AP)"
+        default ""
+        help
+            A private password for Daddy-Status-Setup. The network is enabled
+            after three minutes without station Wi-Fi and disabled on reconnection.
+            Configure before flashing; do not commit real passwords.
+
+
     config WIFI_SSID
         string "WiFi SSID"
         default ""

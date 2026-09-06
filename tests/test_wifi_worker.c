@@ -10,6 +10,8 @@ static unsigned attempts, waits, delays, cancellations, stops;
 static void (*run_worker)(void *);
 static esp_netif_t netif;
 static bool in_flight;
+static int selected_mode;
+static bool ap_configured;
 static void disconnected(void)
 {
     in_flight = false;
@@ -109,15 +111,24 @@ esp_err_t esp_wifi_set_storage(int mode)
 }
 esp_err_t esp_wifi_set_mode(int mode)
 {
+    selected_mode = mode;
     return ESP_OK;
 }
 esp_err_t esp_wifi_set_config(int iface, const wifi_config_t *c)
 {
-    assert(!strcmp(c->sta.ssid, CONFIG_WIFI_SSID));
+    if (iface == WIFI_IF_STA)
+        assert(!strcmp(c->sta.ssid, CONFIG_WIFI_SSID));
+    else {
+        assert(selected_mode == WIFI_MODE_APSTA);
+        ap_configured = true;
+        assert(c->ap.authmode == WIFI_AUTH_WPA2_PSK);
+        assert(!strcmp(c->ap.password, CONFIG_SETUP_PASSWORD));
+    }
     return ESP_OK;
 }
 esp_err_t esp_wifi_start(void)
 {
+    assert(ap_configured);
     event_handler(NULL, WIFI_EVENT, WIFI_EVENT_STA_START, NULL);
     return ESP_OK;
 }
@@ -174,5 +185,21 @@ int main(void)
     wifi_event_sta_disconnected_t disconnect = {.reason = 2, .rssi = -45};
     event_handler(NULL, WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect);
     assert(!wifi_is_connected());
+    wifi_recovery_tick(179999999);
+    assert(!recovery && selected_mode == WIFI_MODE_STA);
+    wifi_recovery_tick(180000000);
+    assert(recovery && selected_mode == WIFI_MODE_APSTA);
+    bits |= CONNECTED_BIT;
+    wifi_recovery_tick(180000001);
+    assert(!recovery && selected_mode == WIFI_MODE_STA);
     puts("Wi-Fi startup, retry backoff, association/DHCP distinction, and disconnect tests passed");
+}
+
+int64_t esp_timer_get_time(void)
+{
+    return 0;
+}
+esp_netif_t *esp_netif_create_default_wifi_ap(void)
+{
+    return &netif;
 }

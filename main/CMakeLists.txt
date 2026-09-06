@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "web_server.c" "ledcontrol.c" "wifi.c" "graph_client.c" "protocol.c"
+    SRCS "settings.c" "main.c" "web_server.c" "ledcontrol.c" "wifi.c" "graph_client.c" "protocol.c"
          "auth_client.c" "http_transport.c" "token_storage.c" "presence.c" "app_state.c" "led_frame.c" "diagnostics.c"
     EMBED_TXTFILES "auth.html"
     INCLUDE_DIRS "include"

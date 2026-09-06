@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "http_transport.h"
 #include "sdkconfig.h"
+#include "settings.h"
 #include "task_time.h"
 #include "token_storage.h"
 #include "wifi.h"
@@ -71,7 +72,7 @@ static esp_err_t auth_request(const char *path, const char *form, http_response_
 {
     char url[160];
     int n = snprintf(url, sizeof(url), "https://login.microsoftonline.com/%s/oauth2/v2.0/%s",
-                     CONFIG_AAD_TENANT_ID, path);
+                     settings_get()->tenant, path);
     if (n < 0 || (size_t)n >= sizeof(url)) {
         memset(response, 0, sizeof(*response));
         return ESP_ERR_INVALID_SIZE;
@@ -85,7 +86,7 @@ static char *token_form(const char *value, bool refreshing)
     if (!encoded)
         return NULL;
     char *form = NULL;
-    int n = asprintf(&form, "client_id=%s&grant_type=%s&%s=%s", CONFIG_AAD_CLIENT_ID,
+    int n = asprintf(&form, "client_id=%s&grant_type=%s&%s=%s", settings_get()->client,
                      refreshing ? "refresh_token"
                                 : "urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
                      refreshing ? "refresh_token" : "device_code", encoded);
@@ -140,7 +141,7 @@ static esp_err_t device_login(auth_client_t *auth, unsigned *retry_after)
     if (!scope)
         return ESP_ERR_NO_MEM;
     char *form = NULL;
-    int n = asprintf(&form, "client_id=%s&scope=%s", CONFIG_AAD_CLIENT_ID, scope);
+    int n = asprintf(&form, "client_id=%s&scope=%s", settings_get()->client, scope);
     free(scope);
     if (n < 0)
         return ESP_ERR_NO_MEM;

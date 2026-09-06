@@ -13,7 +13,7 @@ typedef struct {
     esp_err_t (*handler)(httpd_req_t *);
 } httpd_uri_t;
 typedef struct {
-    int max_open_sockets;
+    int max_open_sockets, stack_size;
     bool lru_purge_enable;
     int recv_wait_timeout, send_wait_timeout;
 } httpd_config_t;
