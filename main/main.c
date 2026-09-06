@@ -1,5 +1,6 @@
 #include "diagnostics.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -9,6 +10,7 @@
 #include "nvs_flash.h"
 #include "protocol.h"
 #include "sdkconfig.h"
+#include "settings.h"
 #include "task_time.h"
 #include "web_server.h"
 #include "wifi.h"
@@ -26,17 +28,9 @@ static void nvs_init(void)
 
 void app_main(void)
 {
-    ESP_ERROR_CHECK(leds_init());
-    if (!CONFIG_WIFI_SSID[0] || !guid_valid(CONFIG_AAD_TENANT_ID) ||
-        !guid_valid(CONFIG_AAD_CLIENT_ID) || !CONFIG_NTP_SERVER[0] ||
-        CONFIG_PRESENCE_STALE_SECONDS <= CONFIG_PRESENCE_POLL_SECONDS) {
-        ESP_LOGE(
-            "main",
-            "Configure Wi-Fi, tenant/client GUIDs, NTP, and polling/stale intervals in menuconfig");
-        ESP_ERROR_CHECK(leds_set_mode(DISPLAY_CONFIG_ERROR));
-        vTaskSuspend(NULL);
-    }
     nvs_init();
+    ESP_ERROR_CHECK(settings_init());
+    ESP_ERROR_CHECK(leds_init());
     QueueHandle_t queue = xQueueCreate(1, sizeof(app_status_t));
     ESP_ERROR_CHECK(queue ? ESP_OK : ESP_ERR_NO_MEM);
     wifi_init();
@@ -48,11 +42,15 @@ void app_main(void)
     int64_t last_diagnostic = 0;
     for (;;) {
         diagnostics_sample("main", &last_diagnostic);
+        int64_t now = esp_timer_get_time();
+        if (settings_tick(wifi_is_connected(), now))
+            esp_restart();
+        wifi_recovery_tick(now);
         app_status_t received;
         if (xQueueReceive(queue, &received, refresh_ticks) == pdTRUE)
             status = received;
         display_mode_t mode = app_display_mode(&status, wifi_is_connected(), esp_timer_get_time(),
-                                               (int64_t)CONFIG_PRESENCE_STALE_SECONDS * 1000000);
+                                               (int64_t)settings_get()->stale_seconds * 1000000);
         mode = web_server_display(mode, esp_timer_get_time());
         web_server_update(&status, wifi_is_connected(), mode);
         if (mode != previous) {

@@ -2,14 +2,19 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "settings.h"
 #include "task_time.h"
+#include <string.h>
 
 static EventGroupHandle_t wifi_events;
 static TaskHandle_t reconnect_task;
+static bool recovery;
+static int64_t last_online;
 #define CONNECTED_BIT BIT0
 #define DISCONNECTED_BIT BIT1
 #define STARTED_BIT BIT2
@@ -64,6 +69,10 @@ static void reconnect(void *unused)
     unsigned backoff = 1;
     wait_started();
     for (;;) {
+        if (!settings_get()->ssid[0]) {
+            vTaskDelay(task_ticks_ms(30000));
+            continue;
+        }
         xEventGroupClearBits(wifi_events, DISCONNECTED_BIT);
         esp_err_t err = esp_wifi_connect();
         EventBits_t result = 0;
@@ -103,11 +112,23 @@ void wifi_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    wifi_config_t config = {.sta = {
-                                .ssid = CONFIG_WIFI_SSID,
-                                .password = CONFIG_WIFI_PASSWORD,
-                                .listen_interval = CONFIG_WIFI_LISTEN_INTERVAL,
-                            }};
+    wifi_config_t config = {.sta = {.listen_interval = CONFIG_WIFI_LISTEN_INTERVAL}};
+    const frame_settings_t *settings = settings_get();
+    memcpy(config.sta.ssid, settings->ssid, strlen(settings->ssid));
+    memcpy(config.sta.password, settings->password, strlen(settings->password));
+    ESP_ERROR_CHECK(esp_netif_create_default_wifi_ap() ? ESP_OK : ESP_ERR_NO_MEM);
+    last_online = esp_timer_get_time();
+    const char *password = CONFIG_SETUP_PASSWORD;
+    if (strlen(password) >= 12 && strlen(password) <= 63) {
+        wifi_config_t config = {.ap = {.ssid = "Daddy-Status-Setup",
+                                       .ssid_len = 18,
+                                       .channel = 1,
+                                       .max_connection = 2,
+                                       .authmode = WIFI_AUTH_WPA2_PSK}};
+        memcpy(config.ap.password, password, strlen(password));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &config));
+    }
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
     ESP_ERROR_CHECK(esp_wifi_start());
@@ -132,4 +153,25 @@ void wifi_wait_connected(void)
 bool wifi_is_connected(void)
 {
     return wifi_events && (xEventGroupGetBits(wifi_events) & CONNECTED_BIT);
+}
+
+/* Main task owns AP transitions. A failed station connection remains retryable. */
+void wifi_recovery_tick(int64_t now)
+{
+    bool online = wifi_is_connected();
+    if (online)
+        last_online = now;
+    bool needed = !online && (!settings_get()->ssid[0] || now - last_online >= 180000000);
+    if (needed == recovery)
+        return;
+    if (needed) {
+        const char *password = CONFIG_SETUP_PASSWORD;
+        if (strlen(password) < 12 || strlen(password) > 63)
+            return; /* Explicitly configured secret required; never start an open AP. */
+        if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK)
+            return;
+        ESP_LOGW("wifi", "Recovery Wi-Fi enabled; open http://192.168.4.1/");
+    } else if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
+        return;
+    recovery = needed;
 }

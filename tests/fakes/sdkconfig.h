@@ -8,3 +8,5 @@
 #define CONFIG_WIFI_SSID "test-network"
 #define CONFIG_WIFI_PASSWORD "test-password"
 #define CONFIG_WIFI_LISTEN_INTERVAL 3
+
+#define CONFIG_SETUP_PASSWORD "test-setup-password"

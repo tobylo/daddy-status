@@ -162,7 +162,7 @@ int main(void)
     assert(web_server_start() == ESP_FAIL && !callback && stops == 1);
     registrations = 0;
     fail_registration = 0;
-    assert(web_server_start() == ESP_OK && registrations == 4 && callback);
+    assert(web_server_start() == ESP_OK && registrations == 6 && callback);
     check("waiting", "", 0);
     char borrowed[] = "ABCD-EFGH";
     callback(AUTH_CODE_READY, borrowed, 5000000);
@@ -180,5 +180,36 @@ int main(void)
     check("code", "\"<script>", 1);
     assert(index_get(NULL) == ESP_OK && !strcmp(output, test_page));
     dashboard_and_controls();
+    request_body = "{\"action\":\"reset_auth\"}";
+    httpd_req_t req = {.content_len = strlen(request_body)};
+    body_offset = 0;
+    request_token = NULL;
+    assert(settings_post_handler(&req) == ESP_FAIL && error_status == 403);
+    request_token = control_token;
+    assert(settings_post_handler(&req) == ESP_OK);
+    request_body = "{\"action\":\"save\"}";
+    req.content_len = strlen(request_body);
+    body_offset = 0;
+    assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
+    req.content_len = 1537;
+    assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
     puts("web routes, startup cleanup, code ownership, expiry, and JSON tests passed");
+}
+
+/* Storage transitions are exercised with real NVS boundaries in test_settings. */
+cJSON *settings_json(void)
+{
+    return cJSON_CreateObject();
+}
+bool settings_parse(const cJSON *json, frame_settings_t *value)
+{
+    return false;
+}
+esp_err_t settings_save(const frame_settings_t *value)
+{
+    return ESP_FAIL;
+}
+esp_err_t settings_reset_auth(void)
+{
+    return ESP_OK;
 }

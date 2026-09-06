@@ -18,15 +18,17 @@ run_test() {
     "$TEST_BUILD/$name"
 }
 run_test protocol tests/test_protocol.c main/protocol.c "$CJSON/cJSON.c"
-run_test auth tests/test_auth.c main/auth_client.c main/token_storage.c main/presence.c \
+run_test auth tests/settings_stub.c tests/test_auth.c main/auth_client.c main/token_storage.c main/presence.c \
     main/protocol.c "$CJSON/cJSON.c"
 run_test state tests/test_state.c main/app_state.c main/led_frame.c
-run_test led_worker tests/test_led_worker.c main/ledcontrol.c main/led_frame.c main/diagnostics.c
-run_test led_coarse_ticks -DTEST_FREERTOS_HZ=1 tests/test_led_worker.c \
+run_test led_worker tests/settings_stub.c tests/test_led_worker.c main/ledcontrol.c main/led_frame.c main/diagnostics.c
+run_test led_coarse_ticks tests/settings_stub.c -DTEST_FREERTOS_HZ=1 tests/test_led_worker.c \
     main/ledcontrol.c main/led_frame.c main/diagnostics.c
 run_test http tests/test_http.c main/http_transport.c main/protocol.c "$CJSON/cJSON.c"
-run_test web tests/test_web.c main/protocol.c "$CJSON/cJSON.c"
-run_test graph_worker tests/test_graph_worker.c main/protocol.c main/presence.c \
+run_test web tests/settings_stub.c tests/test_web.c main/protocol.c "$CJSON/cJSON.c"
+run_test graph_worker tests/settings_stub.c tests/test_graph_worker.c main/protocol.c main/presence.c \
     main/app_state.c main/diagnostics.c "$CJSON/cJSON.c"
-run_test wifi_worker tests/test_wifi_worker.c
+run_test wifi_worker tests/settings_stub.c tests/test_wifi_worker.c
 run_test poll_timing tests/test_poll_timing.c
+
+run_test settings tests/test_settings.c main/protocol.c "$CJSON/cJSON.c"

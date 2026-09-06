@@ -8,6 +8,7 @@
 #include "led_frame.h"
 #include "led_strip.h"
 #include "sdkconfig.h"
+#include "settings.h"
 #include "task_time.h"
 #include <string.h>
 
@@ -37,7 +38,7 @@ static void led_task(void *unused)
         diagnostics_sample("leds", &last_diagnostic);
         led_rgb_t frame[STATUS_LED_COUNT];
         uint64_t elapsed_ms = (esp_timer_get_time() - started) / 1000;
-        if (led_frame(mode, elapsed_ms, CONFIG_LED_BRIGHTNESS_PERCENT, frame) &&
+        if (led_frame(mode, elapsed_ms, settings_get()->brightness, frame) &&
             (!rendered || memcmp(previous, frame, sizeof(frame)))) {
             esp_err_t err = render(frame);
             if (err == ESP_OK) {

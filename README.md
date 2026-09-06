@@ -58,7 +58,7 @@ build/flash/monitor tasks, launch VS Code from the shell after exporting ESP-IDF
 Flash and monitor tasks prompt for the port. Debugger configuration is specific
 to your board and probe and is not supplied.
 
-In `menuconfig`, set:
+In `menuconfig`, set the initial defaults (valid saved browser settings take precedence):
 
 | Setting | Default / notes |
 | --- | --- |
@@ -70,14 +70,17 @@ In `menuconfig`, set:
 | LED brightness | 100%; rainbow also applies its intended 30% intensity |
 | NTP server | `pool.ntp.org`; replace if your network requires another server |
 | Status diagnostics | Off; enable for heap/stack observation |
+| Recovery Wi-Fi password | Empty disables recovery; configure a private 12–63 character password before flashing |
 
-An unconfigured build shows magenta and logs what needs configuration. The
+With a configured recovery password, missing Wi-Fi settings enable setup Wi-Fi.
+Missing Microsoft settings show magenta. The page remains reachable through
+connected station Wi-Fi or an enabled recovery AP. The
 network must permit DNS, NTP, and HTTPS to Microsoft. HTTPS waits for clock
 synchronization and uses the ESP-IDF CA bundle; do not disable certificate checks
 to work around network or clock failures.
 
 `sdkconfig`, build output, and managed downloads are ignored. Wi-Fi credentials
-are compiled into your firmware, so keep configured builds private. Access tokens
+may be compiled into firmware defaults and saved in NVS, so keep configured builds private. Access tokens
 stay in RAM; refresh tokens persist in NVS and survive normal reflashing. The
 application does not log token values or authorization headers. Keep SDK HTTP/TLS
 logging at its normal level when handling live credentials. Flash encryption is
@@ -111,13 +114,15 @@ project's behavior and are centralized in `main/presence.c`.
   permanent pause.
 - **Yellow:** finish device login on the frame’s web page. Expired/denied device
   codes finish that attempt; the worker can start another attempt after backoff.
-- **Magenta:** correct missing/invalid IDs, Wi-Fi SSID, NTP server, or polling/stale
-  intervals in `menuconfig`, rebuild, and flash.
+- **Magenta:** open Settings and recovery on the frame page and complete the
+  Microsoft configuration. The page is reachable when station Wi-Fi is connected
+  or a valid recovery AP is enabled.
 - **HTTP 403:** check delegated permission, consent, and tenant policy. Repeated
   token refresh does not solve a permission denial.
 - **Revoked refresh token:** the device returns to the device-code login flow.
-- **Change account or reset saved authorization:** revoke the app's authorization
-  in your account, or deliberately erase the device and reflash:
+- **Change account:** use Reset Microsoft sign-in on the frame page. It restarts
+  and clears local authorization while retaining settings. This does not revoke
+  consent at Microsoft. For a deliberate full device erase and reflash:
 
   ```sh
   idf.py -p /dev/ttyUSB0 erase-flash
@@ -169,7 +174,7 @@ The server uses local HTTP on port 80 and exposes the temporary user code to
 other users of that network. Use a trusted home LAN and do not forward its port
 to the internet. Microsoft passwords are entered only on Microsoft’s HTTPS site;
 access, refresh, and opaque device tokens are never served. Responses are not
-cached. Wi-Fi credentials and Entra application settings still use menuconfig.
+cached. Wi-Fi and Entra settings can be changed under Settings and recovery.
 
 ## Reproduce the tested picture frame
 
@@ -208,3 +213,39 @@ cancels immediately. Yellow tests the first LED only, matching busy mode.
 Any trusted LAN client can operate the tests. The per-boot request token prevents
 ordinary cross-site submissions; it does not replace network access control.
 `/api/auth` remains available for compatibility; `/api/status` drives the dashboard.
+
+
+## Saved settings and recovery Wi-Fi
+
+The page can save Wi-Fi, tenant/client IDs, time server, polling/stale intervals
+and brightness. GPIO stays a build setting so browser input cannot change wiring.
+Leave the password blank to keep it, or explicitly select an open network to
+clear it. Station passwords must be 8–63 printable ASCII characters or a
+64-digit hexadecimal PSK. Stored passwords are never sent back by the API. Saving changes
+restarts the device after two seconds. Tenant/client changes require sign-in
+again; ordinary brightness or timing changes retain authorization.
+
+Each save starts a three-minute connection trial on the next boot. A successful
+station IP connection promotes the settings; it does not prove Microsoft access
+or time-server availability. A timeout or restart during the trial restores the
+previous settings. Changes are rejected while a trial or restart is pending.
+A storage error means a change is not confirmed; reload before retrying. Saved
+settings survive normal flashes; valid records override menuconfig defaults.
+Invalid records fall back to compiled defaults for recovery.
+
+Configure a private **Recovery Wi-Fi password** in menuconfig before flashing.
+After three minutes without station Wi-Fi, the frame enables WPA2 network
+**Daddy-Status-Setup**. With no configured SSID it starts immediately. Connect
+from your phone, accept staying on a network without internet, and open
+**http://192.168.4.1/** manually. There is no captive portal or internet routing.
+The setup network turns off when station Wi-Fi reconnects. Failed connection
+trials reboot once to roll back; recovery Wi-Fi can take another three minutes
+if the previous network is also unavailable. An empty/invalid setup password
+keeps the AP disabled, leaving USB recovery available. Keep the password with
+your private device configuration; it is never exposed through the dashboard.
+
+`GET /api/settings` returns non-secret settings. `POST /api/settings` accepts
+`action=save` with settings or `action=reset_auth`, requiring the same per-boot
+`X-Frame-Token` header as LED controls. Anyone on the trusted LAN who can load
+the page can change settings or reset sign-in. The local HTTP connection is not
+encrypted; do not expose it to untrusted networks.
