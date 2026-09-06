@@ -58,7 +58,7 @@ build/flash/monitor tasks, launch VS Code from the shell after exporting ESP-IDF
 Flash and monitor tasks prompt for the port. Debugger configuration is specific
 to your board and probe and is not supplied.
 
-In `menuconfig`, set the initial defaults (saved browser settings take precedence):
+In `menuconfig`, set the initial defaults (valid saved browser settings take precedence):
 
 | Setting | Default / notes |
 | --- | --- |
@@ -230,7 +230,8 @@ station IP connection promotes the settings; it does not prove Microsoft access
 or time-server availability. A timeout or restart during the trial restores the
 previous settings. Changes are rejected while a trial or restart is pending.
 A storage error means a change is not confirmed; reload before retrying. Saved
-settings survive normal flashes and override menuconfig defaults.
+settings survive normal flashes; valid records override menuconfig defaults.
+Invalid records fall back to compiled defaults for recovery.
 
 Configure a private **Recovery Wi-Fi password** in menuconfig before flashing.
 After three minutes without station Wi-Fi, the frame enables WPA2 network
