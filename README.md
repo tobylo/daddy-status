@@ -73,7 +73,8 @@ In `menuconfig`, set the initial defaults (saved browser settings take precedenc
 | Recovery Wi-Fi password | Empty disables recovery; configure a private 12–63 character password before flashing |
 
 With a configured recovery password, missing Wi-Fi settings enable setup Wi-Fi.
-Missing Microsoft settings show magenta while the web page remains available. The
+Missing Microsoft settings show magenta. The page remains reachable through
+connected station Wi-Fi or an enabled recovery AP. The
 network must permit DNS, NTP, and HTTPS to Microsoft. HTTPS waits for clock
 synchronization and uses the ESP-IDF CA bundle; do not disable certificate checks
 to work around network or clock failures.
@@ -114,7 +115,8 @@ project's behavior and are centralized in `main/presence.c`.
 - **Yellow:** finish device login on the frame’s web page. Expired/denied device
   codes finish that attempt; the worker can start another attempt after backoff.
 - **Magenta:** open Settings and recovery on the frame page and complete the
-  Microsoft configuration. The web server remains available.
+  Microsoft configuration. The page is reachable when station Wi-Fi is connected
+  or a valid recovery AP is enabled.
 - **HTTP 403:** check delegated permission, consent, and tenant policy. Repeated
   token refresh does not solve a permission denial.
 - **Revoked refresh token:** the device returns to the device-code login flow.
@@ -218,7 +220,8 @@ ordinary cross-site submissions; it does not replace network access control.
 The page can save Wi-Fi, tenant/client IDs, time server, polling/stale intervals
 and brightness. GPIO stays a build setting so browser input cannot change wiring.
 Leave the password blank to keep it, or explicitly select an open network to
-clear it. Stored passwords are never sent back by the API. Saving changes
+clear it. Station passwords must be 8–63 printable ASCII characters or a
+64-digit hexadecimal PSK. Stored passwords are never sent back by the API. Saving changes
 restarts the device after two seconds. Tenant/client changes require sign-in
 again; ordinary brightness or timing changes retain authorization.
 

@@ -49,6 +49,10 @@ bool settings_valid(const frame_settings_t *s, bool complete)
     size_t n = strlen(s->password);
     if (n && (n < 8 || n > 64))
         return false;
+    if (n && n < 64)
+        for (size_t i = 0; i < n; ++i)
+            if ((unsigned char)s->password[i] < 32 || (unsigned char)s->password[i] > 126)
+                return false;
     if (n == 64)
         for (size_t i = 0; i < n; ++i)
             if (!isxdigit((unsigned char)s->password[i]))
