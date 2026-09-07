@@ -45,8 +45,10 @@ checkpoint without the owner's results.
 
 ### Stage 4 implementation design
 
-Stage 3 hardware acceptance was received on 2026-09-07. Stage 4 remains in
-progress and must have its own reviewed PR before flashing.
+Stage 3 hardware acceptance was received on 2026-09-07. Stage 4 was implemented
+and reviewed in PR #22, merged as a9c706b and flashed. The design below records
+the implemented approach; hardware results and remaining checks are in
+`docs/validation.md`.
 
 1. Introduce a versioned settings module with compile-time defaults and validated
    NVS overrides. Editable fields: Wi-Fi SSID/password, tenant/client GUIDs, NTP
@@ -73,3 +75,13 @@ progress and must have its own reviewed PR before flashing.
    Build all CI profiles, open the PR, wait for CodeRabbit, fix valid findings and
    merge. Pause for hardware save/restart, invalid-setting rejection, failed Wi-Fi
    recovery and sign-in-reset verification before declaring the stage accepted.
+
+
+### Operational improvement status
+
+All four implementation stages are merged after CodeRabbit review: PRs #19,
+#20, #21 and #22. Owner-confirmed stage 4 checks cover brightness, failed-SSID
+rollback, Microsoft sign-in reset and recovery-network shutdown. Delayed Wi-Fi
+reconnection remains an unresolved observation; it was not established as a
+firmware defect or fixed by this work. Additional hardware checks are explicitly
+listed in `docs/validation.md`; no full soak or power-loss acceptance is claimed.

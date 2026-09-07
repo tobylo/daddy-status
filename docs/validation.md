@@ -108,7 +108,7 @@ versus DHCP state, failed connection backoff, clock wait, 401 token recovery,
 403 denial, 429 Retry-After, preserved freshness during errors and recovery.
 They do not model simultaneous FreeRTOS scheduling or radio/TCP behaviour.
 
-## Stage 2 hardware checkpoint — pending
+## Stage 2 hardware checklist (results below)
 
 After flashing the connection/polling changes, verify before proceeding:
 
@@ -135,7 +135,7 @@ green and approved moving to stage 3. The precise cause of the authentication/
 association failures is unresolved; do not describe this as fast reconnection.
 The captured excerpt confirms subsequent polling, not a completed 24-hour soak.
 
-## Stage 3 hardware checkpoint — pending
+## Stage 3 hardware checklist (results below)
 
 - Compare dashboard activity, freshness, light pattern, GPIO13 and 10-second
   interval with Teams and the physical frame.
@@ -160,7 +160,7 @@ worked and approved proceeding. A controlled dashboard outage and extended soak
 were not separately confirmed in this checkpoint.
 
 
-## Stage 4 hardware checkpoint — pending
+## Stage 4 hardware checklist (results below)
 
 - Save a brightness or timing change, reload after restart, and verify it persists
   and saved Microsoft sign-in still works. Restore the desired 10-second interval.
@@ -180,3 +180,30 @@ corrupt-record fallback. Wi-Fi tests check AP timing, WPA2 setup before start an
 shutdown on station connection. Browser tests cover form loading, rejected saves,
 request tokens and restart feedback. Physical flash power loss and radio/AP
 behavior require the checkpoint above; compilation and mocks cannot prove them.
+
+
+### Stage 4 hardware results — confirmed 2026-09-07
+
+Firmware a9c706b was flashed to the frame. Wi-Fi, saved Microsoft sign-in and
+fresh presence recovered after clock synchronization. The owner confirmed:
+
+- Browser brightness changes worked.
+- Saving an unavailable SSID rolled back and reconnected to the previous network.
+- Microsoft sign-in reset, subsequent login and presence recovery worked, with
+  the brightness setting retained.
+- The recovery network appeared during the station outage and disappeared after
+  station reconnection.
+
+Station recovery was delayed: the owner initially reported blinking blue and a
+persistent setup network after restoring Wi-Fi. Two subsequent read-only LAN
+checks showed connected station Wi-Fi, fresh presence and no service error.
+Uptime advanced from 4347 to 4372 seconds across the observations, with no reset
+or firmware intervention performed. The owner confirmed the lights recovered
+and the setup network disappeared. Outage/re-enable timing was not captured,
+so the reconnect duration and underlying cause remain undetermined.
+
+These results confirm the exercised operational flows, not every checklist item.
+Recovery-page access while connected to the setup AP, invalid-setting rejection
+on hardware, a power cycle during a candidate trial, tenant/client identity
+changes, AP-mode heap/stack measurements and a 24-hour soak were not separately
+confirmed. Their host coverage does not substitute for physical validation.
