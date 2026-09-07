@@ -79,8 +79,9 @@ the implemented approach; hardware results and remaining checks are in
 
 ### Operational improvement status
 
-All four implementation stages are merged after CodeRabbit review: PRs #19,
-#20, #21 and #22. Owner-confirmed stage 4 checks cover brightness, failed-SSID
+All four implementation stages are merged after CodeRabbit review:
+PRs #19, #20, #21 and #22. Owner-confirmed stage 4 checks cover brightness,
+failed-SSID
 rollback, Microsoft sign-in reset and recovery-network shutdown. Delayed Wi-Fi
 reconnection remains an unresolved observation; it was not established as a
 firmware defect or fixed by this work. Additional hardware checks are explicitly
