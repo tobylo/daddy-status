@@ -154,6 +154,7 @@ async function loadSettings(){
    clearFieldErrors();
    el('settings-status').textContent=rebooted?'Frame reconnected. Current settings loaded.':'Settings loaded. Passwords are never displayed.';
   }
+  if(settingsLoaded&&!settingsAvailable&&!rebooted)el('settings-status').textContent='Settings connection restored. Your edits are kept.';
   settingsToken=data.control_token;
   controlToken=data.control_token;
   settingsLoaded=true;settingsAvailable=true;
