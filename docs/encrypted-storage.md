@@ -50,9 +50,12 @@ the larger encryption bootloader. NVS moves to `0x11000` (24 KiB), PHY data to
 `0x17000`, and the first application slot to `0x20000` (size `0x1e0000`). The
 second slot remains at `0x200000` (size `0x1f0000`), OTA metadata at `0x3f0000`,
 and a new 4 KiB `nvs_keys` partition at `0x3f2000` has the `encrypted` flag.
-Signed images must fit the smaller first slot. The NVS data partition itself must not have that flag: its
-entries are encrypted by the NVS library. IDF generates device-specific NVS keys
-when the key partition is empty and reuses them on subsequent boots.
+Signed images must fit the smaller first slot. The NVS data partition itself
+must not have that flag: its entries are encrypted by the NVS library. Startup
+loads keys through IDF and calls its explicit secure NVS initializer. New
+device-specific keys are generated only when IDF reports an uninitialized key
+partition and the entire NVS data partition is erased. Corrupt/unreadable keys
+are never regenerated automatically. Temporary key material is zeroized.
 
 ## First installation and migration
 
@@ -65,8 +68,8 @@ an application-only OTA upload: it cannot provision the bootloader or layout.
 There is **no in-place conversion of existing plaintext NVS** in this project.
 Migrating an existing unencrypted device requires deliberate USB reprovisioning
 with a full flash erase to remove the old layout, plaintext credentials and
-old OTA images. Record settings beforehand and
-expect to sign in again. This erase is destructive and is not part of normal firmware updates. Do not
+old OTA images. Record settings beforehand and expect to sign in again. This
+erase is destructive and is not part of normal firmware updates. Do not
 apply generic erase/reflash commands to an already encrypted device. Follow the
 SDK's procedure appropriate to its actual eFuse state.
 

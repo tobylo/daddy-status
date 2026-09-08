@@ -5,7 +5,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES esp_http_server
     PRIV_REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_client
-                  bootloader_support app_update esp-tls esp_driver_gpio esp_timer
+                  esp_partition mbedtls bootloader_support app_update esp-tls esp_driver_gpio esp_timer
 )
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wstrict-prototypes -Werror=implicit-function-declaration)
 # Limit parser recursion to fit the ESP32 worker stack. No payload needs deep nesting.
