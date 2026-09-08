@@ -18,6 +18,7 @@ static int64_t now;
 static void (*worker_fn)(void *);
 static led_rgb_t pixels[STATUS_LED_COUNT];
 static jmp_buf finished;
+extern int test_brightness;
 
 QueueHandle_t xQueueCreate(unsigned length, size_t size)
 {
@@ -40,6 +41,13 @@ BaseType_t xQueueOverwrite(QueueHandle_t q, const void *item)
     queue.pending = true;
     return pdPASS;
 }
+BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t wait)
+{
+    assert(q == &queue && queue.allocated && wait == 0);
+    if (queue.pending)
+        return pdFALSE;
+    return xQueueOverwrite(q, item);
+}
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
 {
     assert(q == &queue && queue.allocated && wait > 0);
@@ -60,9 +68,19 @@ BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
             assert(refreshes == 4 && wait == portMAX_DELAY);
             assert(leds_set_mode(DISPLAY_AVAILABLE) == ESP_OK);
             break;
-        default:
+        case 3:
             assert(refreshes == 5 && pixels[0].green == 140 && pixels[1].green == 140);
             assert(wait == portMAX_DELAY && created_tasks == 1);
+            test_brightness = 50;
+            leds_refresh(); /* Wake a static display with no mode change. */
+            break;
+        case 4:
+            assert(refreshes == 6 && pixels[0].green == 70 && pixels[1].green == 70);
+            assert(wait == portMAX_DELAY);
+            leds_refresh(); /* Unchanged pixels should not hit the driver again. */
+            break;
+        default:
+            assert(refreshes == 6 && wait == portMAX_DELAY && created_tasks == 1);
             longjmp(finished, 1);
         }
     }
@@ -120,6 +138,7 @@ esp_err_t led_strip_del(led_strip_handle_t strip)
 
 int main(void)
 {
+    leds_refresh(); /* Safe before initialization. */
     assert(leds_set_mode(DISPLAY_AVAILABLE) == ESP_ERR_INVALID_STATE);
     fail_queue = true;
     assert(leds_init() == ESP_ERR_NO_MEM);
@@ -135,6 +154,7 @@ int main(void)
     assert(leds_set_mode(DISPLAY_MODE_COUNT) == ESP_ERR_INVALID_ARG);
     assert(leds_set_mode(DISPLAY_PLAY) == ESP_OK);
     assert(leds_set_mode(DISPLAY_DO_NOT_DISTURB) == ESP_OK); /* Latest mode wins. */
+    leds_refresh(); /* Preserve the queued DND mode. */
     if (!setjmp(finished))
         worker_fn(NULL);
     puts("LED worker queue, initialization, retry, and mode-change tests passed");

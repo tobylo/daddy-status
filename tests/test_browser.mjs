@@ -5,7 +5,7 @@ const html=readFileSync(new URL('../main/auth.html',import.meta.url),'utf8');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{textContent:'',hidden:true,value:'',checked:false,children:[],appendChild(child){this.children.push(child);},addEventListener(event,fn){this[event]=fn;}}]));
 const buttons=[...html.matchAll(/data-mode="([^"]+)"/g)].map(([,mode])=>({dataset:{mode},disabled:true,addEventListener(event,fn){this.click=fn;}}));
-let now=0, fail=false, postStatus=200, lastRequest;
+let now=0, fail=false, postStatus=200, lastRequest, outcome='restart';
 const base={connected:true,error:'none',service:'ready',activity:'Available',fresh:true,age_seconds:1,display:'green',poll_seconds:10,uptime_seconds:600,led_gpio:13,brightness_percent:100,test_seconds:0,control_token:'test-token'};
 let body={...base,state:'code',user_code:'ABCD-EFGH',expires_in:2};
 const context=vm.createContext({
@@ -15,7 +15,7 @@ const context=vm.createContext({
  fetch:async(url,options)=>{
   if(fail)throw Error('Offline');
   lastRequest={url,...options};
-  if(options.method==='POST')return {ok:postStatus===200};
+  if(options.method==='POST')return {ok:postStatus===200,json:async()=>({ok:true,outcome})};
   if(url==='/api/settings')return {ok:true,json:async()=>({ssid:'network',tenant:'tenant',client:'client',ntp:'pool.ntp.org',poll_seconds:10,stale_seconds:60,brightness:100,password_set:true,trial:false})};
   return {ok:true,json:async()=>body};
  }
@@ -69,7 +69,18 @@ assert.match(elements['settings-status'].textContent,/not confirmed/);
 assert.equal(lastRequest.url,'/api/settings');
 assert.equal(lastRequest.headers['X-Frame-Token'],'test-token');
 assert.equal(JSON.parse(lastRequest.body).poll_seconds,10);
-postStatus=200;await vm.runInContext('changeSettings("reset_auth")',context);
+postStatus=200;
+for(const [value,message] of [['unchanged',/No changes/],['applied',/Brightness applied/]]){
+ outcome=value;await vm.runInContext('changeSettings("save")',context);
+ assert.match(elements['settings-status'].textContent,message);
+ assert.equal(elements['save-settings'].disabled,false);
+ assert.ok(buttons.every(b=>!b.disabled));
+}
+outcome='wifi_trial';await vm.runInContext('changeSettings("save")',context);
+assert.match(elements['settings-status'].textContent,/Wi-Fi connection trial/);
+assert.equal(elements['save-settings'].disabled,true);
+vm.runInContext('restarting=false',context);
+outcome='restart';await vm.runInContext('changeSettings("reset_auth")',context);
 assert.deepEqual(JSON.parse(lastRequest.body),{action:'reset_auth'});
 assert.match(elements['settings-status'].textContent,/restarting/);
 assert.equal(elements['save-settings'].disabled,true);
