@@ -157,6 +157,9 @@ static void dashboard_and_controls(void)
     assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
 }
 
+static bool valid_settings;
+static settings_save_result_t save_result;
+
 int main(void)
 {
     fail_start = true;
@@ -195,6 +198,15 @@ int main(void)
     req.content_len = strlen(request_body);
     body_offset = 0;
     assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
+    valid_settings = true;
+    const char *outcomes[] = {"unchanged", "applied", "restart", "wifi_trial"};
+    for (save_result = SETTINGS_UNCHANGED; save_result <= SETTINGS_WIFI_TRIAL; ++save_result) {
+        body_offset = 0;
+        assert(settings_post_handler(&req) == ESP_OK);
+        cJSON *response = cJSON_Parse(output);
+        assert(response && !strcmp(json_string(response, "outcome"), outcomes[save_result]));
+        cJSON_Delete(response);
+    }
     req.content_len = 1537;
     assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
     puts("web routes, startup cleanup, code ownership, expiry, and JSON tests passed");
@@ -207,11 +219,12 @@ cJSON *settings_json(void)
 }
 bool settings_parse(const cJSON *json, frame_settings_t *value)
 {
-    return false;
+    return valid_settings;
 }
-esp_err_t settings_save(const frame_settings_t *value)
+esp_err_t settings_save(const frame_settings_t *value, settings_save_result_t *result)
 {
-    return ESP_FAIL;
+    *result = save_result;
+    return ESP_OK;
 }
 esp_err_t settings_reset_auth(void)
 {

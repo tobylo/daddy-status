@@ -21,6 +21,7 @@ static settings_record_t record;
 static frame_settings_t current;
 static SemaphoreHandle_t mutex;
 static bool trial;
+static int brightness;
 static int64_t reboot_at, boot_at, next_commit;
 
 void settings_defaults(frame_settings_t *s)
@@ -132,6 +133,7 @@ esp_err_t settings_init(void)
     if (memcmp(&record, &next, sizeof(next)) && (err = persist(&next)) != ESP_OK)
         return err;
     current = trial ? record.candidate : record.active;
+    brightness = current.brightness;
     boot_at = esp_timer_get_time();
     reboot_at = 0;
     next_commit = 0;
@@ -141,6 +143,14 @@ esp_err_t settings_init(void)
 const frame_settings_t *settings_get(void)
 {
     return &current;
+}
+
+int settings_brightness(void)
+{
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    int value = brightness;
+    xSemaphoreGive(mutex);
+    return value;
 }
 
 static bool string_field(const cJSON *json, const char *name, char *dest, size_t size)
@@ -163,6 +173,7 @@ static bool number_field(const cJSON *json, const char *name, int *value)
 bool settings_parse(const cJSON *json, frame_settings_t *s)
 {
     *s = current;
+    s->brightness = settings_brightness();
     if (!cJSON_IsObject(json) || !string_field(json, "ssid", s->ssid, sizeof(s->ssid)) ||
         !string_field(json, "tenant", s->tenant, sizeof(s->tenant)) ||
         !string_field(json, "client", s->client, sizeof(s->client)) ||
@@ -192,7 +203,7 @@ cJSON *settings_json(void)
         !cJSON_AddStringToObject(j, "ntp", s->ntp) ||
         !cJSON_AddNumberToObject(j, "poll_seconds", s->poll_seconds) ||
         !cJSON_AddNumberToObject(j, "stale_seconds", s->stale_seconds) ||
-        !cJSON_AddNumberToObject(j, "brightness", s->brightness) ||
+        !cJSON_AddNumberToObject(j, "brightness", settings_brightness()) ||
         !cJSON_AddBoolToObject(j, "password_set", s->password[0] != 0) ||
         !cJSON_AddBoolToObject(j, "trial", settings_trial())) {
         cJSON_Delete(j);
@@ -201,21 +212,46 @@ cJSON *settings_json(void)
     return j;
 }
 
-esp_err_t settings_save(const frame_settings_t *s)
+/* Compare values, not padding or unused bytes after string terminators. */
+static bool wifi_changed(const frame_settings_t *a, const frame_settings_t *b)
 {
-    if (!settings_valid(s, true))
+    return strcmp(a->ssid, b->ssid) || strcmp(a->password, b->password);
+}
+
+esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *result)
+{
+    if (!result || !settings_valid(s, true))
         return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(mutex, portMAX_DELAY);
     esp_err_t err = ESP_ERR_INVALID_STATE;
     if (!trial && !reboot_at) {
-        settings_record_t next = record;
-        next.candidate = *s;
-        next.pending = 1;
-        next.tried = 0;
-        next.reset_auth = strcmp(s->tenant, current.tenant) || strcmp(s->client, current.client);
-        err = persist(&next);
-        if (err == ESP_OK)
-            reboot_at = esp_timer_get_time() + 2000000;
+        bool wifi = wifi_changed(s, &current);
+        bool identity = strcmp(s->tenant, current.tenant) || strcmp(s->client, current.client);
+        bool restart = wifi || identity || strcmp(s->ntp, current.ntp) ||
+                       s->poll_seconds != current.poll_seconds ||
+                       s->stale_seconds != current.stale_seconds;
+        if (!restart && s->brightness == brightness) {
+            *result = SETTINGS_UNCHANGED;
+            err = ESP_OK;
+        } else {
+            settings_record_t next = record;
+            if (wifi)
+                next.candidate = *s;
+            else
+                next.active = *s;
+            next.pending = wifi;
+            next.tried = 0;
+            next.reset_auth = identity;
+            err = persist(&next);
+            if (err == ESP_OK) {
+                brightness = s->brightness;
+                *result = wifi      ? SETTINGS_WIFI_TRIAL
+                          : restart ? SETTINGS_RESTART
+                                    : SETTINGS_APPLIED;
+                if (restart)
+                    reboot_at = esp_timer_get_time() + 2000000;
+            }
+        }
     }
     xSemaphoreGive(mutex);
     return err;

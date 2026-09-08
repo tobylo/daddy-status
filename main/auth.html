@@ -36,7 +36,7 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <dt>Polling interval</dt><dd id="poll">—</dd><dt>LED data pin</dt><dd id="gpio">—</dd><dt>Brightness</dt><dd id="brightness">—</dd><dt>Uptime</dt><dd id="uptime">—</dd>
 </dl></section>
 <section class="card"><details><summary>Settings and recovery</summary>
-<p class="muted">Saving restarts the frame. If the new Wi-Fi cannot connect within three minutes, the previous settings return. Keep this page’s address or reconnect to the setup network if needed.</p>
+<p class="muted">Unchanged saves are skipped and brightness applies immediately. Other changes restart the frame. Wi-Fi changes try the new connection for three minutes and restore the previous settings if it fails. Keep this page’s address or reconnect to the setup network if needed.</p>
 <form id="settings-form">
 <label for="setting-ssid">Wi-Fi name (2.4 GHz)</label><input id="setting-ssid" maxlength="32" required>
 <label for="setting-password">New Wi-Fi password</label><input id="setting-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
@@ -47,7 +47,7 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <label for="setting-poll_seconds">Poll interval (2–300 seconds)</label><input id="setting-poll_seconds" type="number" min="2" max="300" required>
 <label for="setting-stale_seconds">Stale after (30–3600 seconds; longer than poll interval)</label><input id="setting-stale_seconds" type="number" min="30" max="3600" required>
 <label for="setting-brightness">Brightness (1–100%)</label><input id="setting-brightness" type="number" min="1" max="100" required>
-<button id="save-settings" type="submit" disabled>Save and restart</button>
+<button id="save-settings" type="submit" disabled>Save settings</button>
 </form>
 <p>Changing tenant or app IDs requires Microsoft sign-in again. Reset sign-in to use another account; frame settings are kept.</p>
 <button id="reset-auth" type="button" disabled>Reset Microsoft sign-in</button>
@@ -156,8 +156,11 @@ async function changeSettings(action){
  try{
   const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Frame-Token':controlToken},body:JSON.stringify(payload),signal:controller.signal});
   if(!response.ok)throw Error('Rejected');
-  restarting=true;el('setting-password').value='';
-  el('settings-status').textContent='Saved. The frame is restarting. Reopen this page after it reconnects; its address may change with the Wi-Fi network.';
+  const data=await response.json();
+  const messages={unchanged:'No changes to save.',applied:'Saved. Brightness applied.',restart:'Saved. The frame is restarting. Reopen this page after it reconnects.',wifi_trial:'Saved. The frame is restarting for a Wi-Fi connection trial. Reopen this page after it reconnects; its address may change.'};
+  if(!Object.hasOwn(messages,data.outcome))throw Error('Unknown save outcome');
+  restarting=['restart','wifi_trial'].includes(data.outcome);el('setting-password').value='';
+  el('settings-status').textContent=messages[data.outcome];
  }catch(error){el('settings-status').textContent='Change not confirmed. Check field values, connection and whether a restart or Wi-Fi trial is still running. Reload before retrying.';}
  clearTimeout(timeout);settingsBusy=false;enableTests();
 }

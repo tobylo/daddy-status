@@ -12,3 +12,8 @@ const frame_settings_t *settings_get(void)
 {
     return &value;
 }
+
+int settings_brightness(void)
+{
+    return value.brightness;
+}

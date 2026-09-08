@@ -221,11 +221,11 @@ The page can save Wi-Fi, tenant/client IDs, time server, polling/stale intervals
 and brightness. GPIO stays a build setting so browser input cannot change wiring.
 Leave the password blank to keep it, or explicitly select an open network to
 clear it. Station passwords must be 8–63 printable ASCII characters or a
-64-digit hexadecimal PSK. Stored passwords are never sent back by the API. Saving changes
-restarts the device after two seconds. Tenant/client changes require sign-in
+64-digit hexadecimal PSK. Stored passwords are never sent back by the API. Unchanged saves do not write storage or restart. Brightness applies immediately
+after a successful save. Other changes restart the device after two seconds. Tenant/client changes require sign-in
 again; ordinary brightness or timing changes retain authorization.
 
-Each save starts a three-minute connection trial on the next boot. A successful
+Only SSID or password changes start a three-minute connection trial on the next boot. A successful
 station IP connection promotes the settings; it does not prove Microsoft access
 or time-server availability. A timeout or restart during the trial restores the
 previous settings. Changes are rejected while a trial or restart is pending.

@@ -11,14 +11,23 @@ typedef struct {
 /* Initialized before workers; this snapshot is immutable until restart. */
 esp_err_t settings_init(void);
 const frame_settings_t *settings_get(void);
+/* Live brightness is synchronized separately from the immutable boot snapshot. */
+int settings_brightness(void);
 void settings_defaults(frame_settings_t *value);
 bool settings_valid(const frame_settings_t *value, bool complete);
 /* Parse a complete form; omitted/empty password keeps the existing secret.
  * Explicit open_network=true clears it. No secrets are returned by settings_json. */
 bool settings_parse(const cJSON *json, frame_settings_t *value);
 cJSON *settings_json(void);
-/* Serialized NVS changes. Success schedules a reboot; active snapshot stays intact. */
-esp_err_t settings_save(const frame_settings_t *value);
+typedef enum {
+    SETTINGS_UNCHANGED,
+    SETTINGS_APPLIED,
+    SETTINGS_RESTART,
+    SETTINGS_WIFI_TRIAL,
+} settings_save_result_t;
+/* Serialized saves: no-op, live brightness, restart, or Wi-Fi trial.
+ * Result is written only on success. Other runtime settings stay intact until reboot. */
+esp_err_t settings_save(const frame_settings_t *value, settings_save_result_t *result);
 esp_err_t settings_reset_auth(void);
 /* Main task: promotes DHCP-successful trials or rolls back after three minutes.
  * Returns true when a scheduled reboot is due. */
