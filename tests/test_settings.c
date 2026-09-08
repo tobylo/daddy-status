@@ -7,7 +7,14 @@ static settings_record_t disk;
 static bool exists, held;
 static int64_t clock_now;
 static esp_err_t store_error, token_error;
-static unsigned erased, writes;
+static unsigned erased, writes, refreshes;
+void leds_refresh(void)
+{
+    assert(!held);
+    assert(settings_brightness() == disk.active.brightness ||
+           settings_brightness() == disk.candidate.brightness);
+    ++refreshes;
+}
 static settings_save_result_t result;
 SemaphoreHandle_t xSemaphoreCreateMutex(void)
 {
@@ -120,18 +127,18 @@ int main(void)
     /* Trailing bytes are not changes; no-op saves never touch NVS. */
     next.ssid[sizeof(next.ssid) - 1] = 'x';
     assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == 0 && !settings_tick(false, 3000000));
+    assert(writes == 0 && refreshes == 0 && !settings_tick(false, 3000000));
     next = original;
     next.brightness = 20;
     store_error = ESP_FAIL;
     assert(settings_save(&next, &result) == ESP_FAIL);
-    assert(settings_brightness() == original.brightness);
+    assert(settings_brightness() == original.brightness && refreshes == 0);
     store_error = 0;
     assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_APPLIED);
-    assert(settings_brightness() == 20 && !settings_tick(false, 3000000));
+    assert(settings_brightness() == 20 && refreshes == 1 && !settings_tick(false, 3000000));
     unsigned saved_writes = writes;
     assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == saved_writes);
+    assert(writes == saved_writes && refreshes == 1);
     j = settings_json();
     assert(cJSON_GetObjectItem(j, "brightness")->valueint == 20);
     cJSON_Delete(j);

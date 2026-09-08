@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "ledcontrol.h"
 #include "nvs.h"
 #include "protocol.h"
 #include "sdkconfig.h"
@@ -222,6 +223,7 @@ esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *resul
 {
     if (!result || !settings_valid(s, true))
         return ESP_ERR_INVALID_ARG;
+    bool refresh = false;
     xSemaphoreTake(mutex, portMAX_DELAY);
     esp_err_t err = ESP_ERR_INVALID_STATE;
     if (!trial && !reboot_at) {
@@ -244,6 +246,7 @@ esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *resul
             next.reset_auth = identity;
             err = persist(&next);
             if (err == ESP_OK) {
+                refresh = brightness != s->brightness;
                 brightness = s->brightness;
                 *result = wifi      ? SETTINGS_WIFI_TRIAL
                           : restart ? SETTINGS_RESTART
@@ -254,6 +257,8 @@ esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *resul
         }
     }
     xSemaphoreGive(mutex);
+    if (refresh)
+        leds_refresh();
     return err;
 }
 esp_err_t settings_reset_auth(void)

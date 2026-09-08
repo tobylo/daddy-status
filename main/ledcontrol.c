@@ -57,7 +57,8 @@ static void led_task(void *unused)
         TickType_t wait = failed ? task_ticks_ms(250)
                                  : (led_mode_animated(mode) ? task_ticks_ms(15) : portMAX_DELAY);
         display_mode_t next;
-        if (xQueueReceive(mode_queue, &next, wait) == pdTRUE && next != mode) {
+        if (xQueueReceive(mode_queue, &next, wait) == pdTRUE && next < DISPLAY_MODE_COUNT &&
+            next != mode) {
             mode = next;
             started = esp_timer_get_time();
             rendered = false;
@@ -98,4 +99,13 @@ esp_err_t leds_set_mode(display_mode_t mode)
     if (!mode_queue)
         return ESP_ERR_INVALID_STATE;
     return xQueueOverwrite(mode_queue, &mode) == pdPASS ? ESP_OK : ESP_FAIL;
+}
+
+void leds_refresh(void)
+{
+    if (!mode_queue)
+        return;
+    /* A queued mode already wakes the worker. Never overwrite it with a refresh. */
+    display_mode_t refresh = DISPLAY_MODE_COUNT;
+    xQueueSend(mode_queue, &refresh, 0);
 }

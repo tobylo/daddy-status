@@ -13,7 +13,9 @@ const frame_settings_t *settings_get(void)
     return &value;
 }
 
+int test_brightness = CONFIG_LED_BRIGHTNESS_PERCENT;
+
 int settings_brightness(void)
 {
-    return value.brightness;
+    return test_brightness;
 }
