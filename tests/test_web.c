@@ -8,9 +8,10 @@ typedef int portMUX_TYPE;
 #define portEXIT_CRITICAL(m) ((void)(m))
 #include "../main/web_server.c"
 const char test_page[] __asm__("_binary_auth_html_start") = "<!doctype html>";
+static wifi_diagnostics_t diagnostics;
 void wifi_diagnostics_snapshot(wifi_diagnostics_t *out)
 {
-    memset(out, 0, sizeof(*out));
+    *out = diagnostics;
 }
 esp_err_t firmware_update_upload(httpd_req_t *req)
 {
@@ -19,7 +20,9 @@ esp_err_t firmware_update_upload(httpd_req_t *req)
 static int64_t now;
 static int registrations, stops, fail_registration;
 static bool fail_start, no_store;
-static char output[2048];
+static char output[8192];
+static char error_body[64];
+static esp_err_t error_send_result = ESP_FAIL;
 static const char *request_token, *request_body;
 static size_t body_offset;
 static int error_status;
@@ -100,7 +103,8 @@ esp_err_t httpd_resp_send(httpd_req_t *req, const char *body, int length)
 esp_err_t httpd_resp_send_err(httpd_req_t *req, int status, const char *body)
 {
     error_status = status;
-    return ESP_FAIL;
+    snprintf(error_body, sizeof(error_body), "%s", body);
+    return error_send_result;
 }
 static void check(const char *expected, const char *code, int seconds)
 {
@@ -174,6 +178,128 @@ static void dashboard_and_controls(void)
     assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
 }
 
+static void post_error_contract(void)
+{
+    esp_err_t (*handlers[])(httpd_req_t *) = {led_test_post, settings_post_handler};
+    const size_t capacities[] = {65, 1537};
+    const char *invalid[] = {"Invalid test request", "Invalid settings request"};
+    for (unsigned i = 0; i < 2; ++i) {
+        httpd_req_t req = {.content_len = capacities[i]};
+        request_token = NULL;
+        body_offset = 0;
+        no_store = false;
+        /* Sending an error can succeed; that must never permit body processing. */
+        error_send_result = ESP_OK;
+        assert(handlers[i](&req) == ESP_OK);
+        assert(error_status == 403);
+        assert(no_store);
+        assert(!strcmp(error_body, "Reload the frame page"));
+        assert(body_offset == 0);
+        request_token = control_token;
+        assert(handlers[i](&req) == ESP_OK);
+        assert(error_status == 400);
+        assert(!strcmp(error_body, invalid[i]));
+        assert(body_offset == 0);
+        req.content_len = 0;
+        assert(handlers[i](&req) == ESP_OK);
+        assert(!strcmp(error_body, invalid[i]));
+        request_body = "{}";
+        req.content_len = 3;
+        assert(handlers[i](&req) == ESP_OK);
+        assert(error_status == 400);
+        assert(!strcmp(error_body, "Incomplete request"));
+        assert(body_offset == 2);
+        request_body = NULL;
+        body_offset = 0;
+        assert(handlers[i](&req) == ESP_OK);
+        assert(!strcmp(error_body, "Incomplete request"));
+    }
+    error_send_result = ESP_FAIL;
+}
+
+static void led_modes(void)
+{
+    const char *names[] = {"green", "yellow", "red", "blue", "rainbow"};
+    const display_mode_t modes[] = {DISPLAY_AVAILABLE, DISPLAY_BUSY, DISPLAY_DO_NOT_DISTURB,
+                                    DISPLAY_UNKNOWN, DISPLAY_PLAY};
+    request_token = control_token;
+    for (unsigned i = 0; i < 5; ++i) {
+        char body[64];
+        snprintf(body, sizeof(body), "{\"mode\":\"%s\"}", names[i]);
+        request_body = body;
+        body_offset = 0;
+        httpd_req_t req = {.content_len = strlen(body)};
+        assert(led_test_post(&req) == ESP_OK);
+        assert(web_server_display(DISPLAY_CONNECTING, now) == modes[i]);
+    }
+    const char *invalid[] = {"{}", "{\"mode\":null}", "{\"mode\":3}", "{\"mode\":\"RED\"}", "{"};
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        request_body = invalid[i];
+        body_offset = 0;
+        httpd_req_t req = {.content_len = strlen(request_body)};
+        assert(led_test_post(&req) == ESP_FAIL && error_status == 400);
+        assert(!strcmp(error_body, "Unknown test mode"));
+        assert(web_server_display(DISPLAY_CONNECTING, now) == DISPLAY_PLAY);
+    }
+}
+
+static size_t allocation_count, fail_allocation;
+static void *json_malloc(size_t size)
+{
+    return ++allocation_count == fail_allocation ? NULL : malloc(size);
+}
+
+static void dashboard_history_and_allocations(void)
+{
+    now = 90000000;
+    diagnostics = (wifi_diagnostics_t){.has_signal = true,
+                                       .rssi = -62,
+                                       .has_disconnect = true,
+                                       .last_disconnect_reason = 201,
+                                       .retry_count = 7,
+                                       .next_retry_at_us = now + 1000001,
+                                       .recovery_ap = true,
+                                       .event_count = WIFI_EVENT_HISTORY_SIZE + 2};
+    for (unsigned i = 0; i < WIFI_EVENT_HISTORY_SIZE; ++i)
+        diagnostics.events[i] = (wifi_diag_event_t){.type = WIFI_DIAG_DISCONNECTED,
+                                                    .at_us = now - i * 1000000,
+                                                    .reason = 201,
+                                                    .rssi = -60,
+                                                    .retry_count = i};
+    assert(dashboard_get(NULL) == ESP_OK);
+    cJSON *json = cJSON_Parse(output);
+    assert(json && cJSON_GetArraySize(json) == 24);
+    assert(cJSON_GetObjectItem(json, "signal_rssi")->valueint == -62);
+    assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "signal_known")));
+    assert(cJSON_GetObjectItem(json, "next_retry_seconds")->valueint == 2);
+    assert(cJSON_IsTrue(cJSON_GetObjectItem(json, "recovery_ap")));
+    assert(!strcmp(json_string(json, "last_disconnect_reason_name"), "access point not found"));
+    cJSON *history = cJSON_GetObjectItem(json, "wifi_history");
+    assert(cJSON_GetArraySize(history) == WIFI_EVENT_HISTORY_SIZE);
+    for (unsigned i = 0; i < WIFI_EVENT_HISTORY_SIZE; ++i) {
+        cJSON *event = cJSON_GetArrayItem(history, i);
+        unsigned index = (i + 2) % WIFI_EVENT_HISTORY_SIZE;
+        assert(cJSON_GetArraySize(event) == 6);
+        assert(cJSON_GetObjectItem(event, "age_seconds")->valueint == (int)index);
+        assert(cJSON_GetObjectItem(event, "retry_count")->valueint == (int)index);
+        assert(!strcmp(json_string(event, "event"), "disconnected"));
+        assert(!strcmp(json_string(event, "reason_name"), "access point not found"));
+    }
+    cJSON_Delete(json);
+    cJSON_Hooks hooks = {.malloc_fn = json_malloc, .free_fn = free};
+    cJSON_InitHooks(&hooks);
+    allocation_count = 0;
+    assert(dashboard_get(NULL) == ESP_OK);
+    size_t total = allocation_count;
+    for (fail_allocation = 1; fail_allocation <= total; ++fail_allocation) {
+        allocation_count = 0;
+        assert(dashboard_get(NULL) == ESP_FAIL && error_status == 500);
+        assert(!strcmp(error_body, "Out of memory"));
+    }
+    cJSON_InitHooks(NULL);
+    memset(&diagnostics, 0, sizeof(diagnostics));
+}
+
 static bool valid_settings;
 static settings_save_result_t save_result;
 
@@ -204,6 +330,9 @@ int main(void)
     check("code", "\"<script>", 1);
     assert(index_get(NULL) == ESP_OK && !strcmp(output, test_page));
     dashboard_and_controls();
+    post_error_contract();
+    led_modes();
+    dashboard_history_and_allocations();
     request_body = "{\"action\":\"reset_auth\"}";
     httpd_req_t req = {.content_len = strlen(request_body)};
     body_offset = 0;

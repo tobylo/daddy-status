@@ -134,31 +134,147 @@ static const char *wifi_event_name(wifi_diag_event_type_t type)
 
 static const char *wifi_reason_name(uint8_t reason)
 {
-    switch (reason) {
-    case 2:
-        return "authentication expired";
-    case 4:
-        return "association expired";
-    case 15:
-        return "4-way handshake timeout";
-    case 200:
-        return "beacon timeout";
-    case 201:
-        return "access point not found";
-    case 202:
-        return "authentication failed";
-    case 203:
-        return "association failed";
-    case 204:
-        return "handshake timeout";
-    case 205:
-        return "connection failed";
-    default:
-        return "unknown reason";
-    }
+    static const struct {
+        uint8_t reason;
+        const char *name;
+    } reasons[] = {
+        {2, "authentication expired"},   {4, "association expired"},
+        {15, "4-way handshake timeout"}, {200, "beacon timeout"},
+        {201, "access point not found"}, {202, "authentication failed"},
+        {203, "association failed"},     {204, "handshake timeout"},
+        {205, "connection failed"},
+    };
+    for (size_t i = 0; i < sizeof(reasons) / sizeof(reasons[0]); ++i)
+        if (reasons[i].reason == reason)
+            return reasons[i].name;
+    return "unknown reason";
 }
 
-static esp_err_t dashboard_get(httpd_req_t *req)
+static bool add_status_fields(cJSON *json, const app_status_t *current, bool online,
+                              display_mode_t display)
+{
+    static const char *const services[] = {"connecting", "clock", "authenticating", "polling",
+                                           "ready",      "error", "configuration"};
+    static const char *const errors[] = {"none",        "network",     "clock",        "auth",
+                                         "auth_config", "auth_denied", "auth_expired", "storage",
+                                         "permission",  "throttled",   "response"};
+    static const char *const displays[] = {"connecting", "authenticating", "unknown",
+                                           "green",      "yellow",         "red",
+                                           "rainbow",    "configuration"};
+    return cJSON_AddBoolToObject(json, "connected", online) &&
+           cJSON_AddStringToObject(json, "service", LABEL(services, current->service)) &&
+           cJSON_AddStringToObject(json, "error", LABEL(errors, current->error)) &&
+           cJSON_AddStringToObject(json, "activity",
+                                   current->has_presence ? current->activity : "") &&
+           cJSON_AddStringToObject(json, "display", LABEL(displays, display));
+}
+
+static int64_t presence_age(const app_status_t *current, int64_t now)
+{
+    return current->has_presence && now >= current->updated_at_us ? now - current->updated_at_us
+                                                                  : -1;
+}
+
+static bool add_timing_fields(cJSON *json, const app_status_t *current, bool online, int64_t now)
+{
+    int64_t age = presence_age(current, now);
+    bool fresh = online && age >= 0 && age < (int64_t)settings_get()->stale_seconds * 1000000;
+    return cJSON_AddNumberToObject(json, "age_seconds", age < 0 ? -1 : age / 1000000) &&
+           cJSON_AddBoolToObject(json, "fresh", fresh) &&
+           cJSON_AddNumberToObject(json, "poll_seconds", settings_get()->poll_seconds) &&
+           cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000);
+}
+
+static bool add_hardware_fields(cJSON *json)
+{
+    return cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) &&
+           cJSON_AddNumberToObject(json, "brightness_percent", settings_brightness());
+}
+
+static bool add_wifi_signal_fields(cJSON *json, const wifi_diagnostics_t *wifi)
+{
+    return cJSON_AddNumberToObject(json, "signal_rssi", wifi->has_signal ? wifi->rssi : 0) &&
+           cJSON_AddBoolToObject(json, "signal_known", wifi->has_signal) &&
+           cJSON_AddNumberToObject(json, "last_disconnect_reason",
+                                   wifi->has_disconnect ? wifi->last_disconnect_reason : -1) &&
+           cJSON_AddStringToObject(json, "last_disconnect_reason_name",
+                                   wifi->has_disconnect
+                                       ? wifi_reason_name(wifi->last_disconnect_reason)
+                                       : "none recorded");
+}
+
+static int64_t seconds_remaining(int64_t deadline, int64_t now)
+{
+    return deadline > now ? (deadline - now + 999999) / 1000000 : 0;
+}
+
+static bool add_wifi_retry_fields(cJSON *json, const wifi_diagnostics_t *wifi, int64_t now)
+{
+    return cJSON_AddNumberToObject(json, "retry_count", wifi->retry_count) &&
+           cJSON_AddNumberToObject(json, "next_retry_seconds",
+                                   seconds_remaining(wifi->next_retry_at_us, now)) &&
+           cJSON_AddBoolToObject(json, "recovery_ap", wifi->recovery_ap);
+}
+
+static bool add_control_fields(cJSON *json, int64_t until, int64_t now)
+{
+    return cJSON_AddNumberToObject(json, "test_seconds", seconds_remaining(until, now)) &&
+           cJSON_AddStringToObject(json, "control_token", control_token);
+}
+
+static bool add_wifi_event_fields(cJSON *item, const wifi_diag_event_t *event, int64_t now)
+{
+    int64_t age = now >= event->at_us ? now - event->at_us : 0;
+    return cJSON_AddStringToObject(item, "event", wifi_event_name(event->type)) &&
+           cJSON_AddNumberToObject(item, "age_seconds", age / 1000000) &&
+           cJSON_AddNumberToObject(item, "reason", event->reason) &&
+           cJSON_AddStringToObject(item, "reason_name", wifi_reason_name(event->reason)) &&
+           cJSON_AddNumberToObject(item, "rssi", event->rssi) &&
+           cJSON_AddNumberToObject(item, "retry_count", event->retry_count);
+}
+
+static cJSON *wifi_event_json(const wifi_diag_event_t *event, int64_t now)
+{
+    cJSON *item = cJSON_CreateObject();
+    if (item && !add_wifi_event_fields(item, event, now)) {
+        cJSON_Delete(item);
+        item = NULL;
+    }
+    return item;
+}
+
+static bool add_wifi_history(cJSON *json, const wifi_diagnostics_t *wifi, int64_t now)
+{
+    cJSON *history = cJSON_CreateArray();
+    if (!history)
+        return false;
+    unsigned count =
+        wifi->event_count < WIFI_EVENT_HISTORY_SIZE ? wifi->event_count : WIFI_EVENT_HISTORY_SIZE;
+    for (unsigned i = 0; i < count; ++i) {
+        unsigned index = (wifi->event_count - count + i) % WIFI_EVENT_HISTORY_SIZE;
+        cJSON *item = wifi_event_json(&wifi->events[index], now);
+        if (!item) {
+            cJSON_Delete(history);
+            return false;
+        }
+        cJSON_AddItemToArray(history, item);
+    }
+    if (!cJSON_AddItemToObject(json, "wifi_history", history)) {
+        cJSON_Delete(history);
+        return false;
+    }
+    return true;
+}
+
+static bool add_wifi_fields(cJSON *json, int64_t now)
+{
+    wifi_diagnostics_t wifi;
+    wifi_diagnostics_snapshot(&wifi);
+    return add_wifi_signal_fields(json, &wifi) && add_wifi_retry_fields(json, &wifi, now) &&
+           add_wifi_history(json, &wifi, now);
+}
+
+static cJSON *dashboard_json(void)
 {
     app_status_t current;
     bool online;
@@ -171,117 +287,85 @@ static esp_err_t dashboard_get(httpd_req_t *req)
     until = test_deadline;
     portEXIT_CRITICAL(&lock);
     int64_t now = esp_timer_get_time();
-    wifi_diagnostics_t wifi;
-    wifi_diagnostics_snapshot(&wifi);
-    int64_t age =
-        current.has_presence && now >= current.updated_at_us ? now - current.updated_at_us : -1;
-    const char *const services[] = {"connecting", "clock", "authenticating", "polling",
-                                    "ready",      "error", "configuration"};
-    const char *const errors[] = {"none",        "network",     "clock",        "auth",
-                                  "auth_config", "auth_denied", "auth_expired", "storage",
-                                  "permission",  "throttled",   "response"};
-    const char *const displays[] = {"connecting", "authenticating", "unknown",
-                                    "green",      "yellow",         "red",
-                                    "rainbow",    "configuration"};
     cJSON *json = auth_json();
-    if (!json || !cJSON_AddBoolToObject(json, "connected", online) ||
-        !cJSON_AddStringToObject(json, "service", LABEL(services, current.service)) ||
-        !cJSON_AddStringToObject(json, "error", LABEL(errors, current.error)) ||
-        !cJSON_AddStringToObject(json, "activity", current.has_presence ? current.activity : "") ||
-        !cJSON_AddStringToObject(json, "display", LABEL(displays, display)) ||
-        !cJSON_AddNumberToObject(json, "age_seconds", age < 0 ? -1 : age / 1000000) ||
-        !cJSON_AddBoolToObject(json, "fresh",
-                               online && age >= 0 &&
-                                   age < (int64_t)settings_get()->stale_seconds * 1000000) ||
-        !cJSON_AddNumberToObject(json, "poll_seconds", settings_get()->poll_seconds) ||
-        !cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000) ||
-        !cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) ||
-        !cJSON_AddNumberToObject(json, "brightness_percent", settings_brightness()) ||
-        !cJSON_AddNumberToObject(json, "signal_rssi", wifi.has_signal ? wifi.rssi : 0) ||
-        !cJSON_AddBoolToObject(json, "signal_known", wifi.has_signal) ||
-        !cJSON_AddNumberToObject(json, "last_disconnect_reason",
-                                 wifi.has_disconnect ? wifi.last_disconnect_reason : -1) ||
-        !cJSON_AddStringToObject(json, "last_disconnect_reason_name",
-                                 wifi.has_disconnect ? wifi_reason_name(wifi.last_disconnect_reason)
-                                                     : "none recorded") ||
-        !cJSON_AddNumberToObject(json, "retry_count", wifi.retry_count) ||
-        !cJSON_AddNumberToObject(
-            json, "next_retry_seconds",
-            wifi.next_retry_at_us > now ? (wifi.next_retry_at_us - now + 999999) / 1000000 : 0) ||
-        !cJSON_AddBoolToObject(json, "recovery_ap", wifi.recovery_ap) ||
-        !cJSON_AddNumberToObject(json, "test_seconds",
-                                 until > now ? (until - now + 999999) / 1000000 : 0) ||
-        !cJSON_AddStringToObject(json, "control_token", control_token)) {
+    if (!json)
+        return NULL;
+    bool complete = add_status_fields(json, &current, online, display) &&
+                    add_timing_fields(json, &current, online, now) && add_hardware_fields(json) &&
+                    add_wifi_fields(json, now) && add_control_fields(json, until, now);
+    if (!complete) {
         cJSON_Delete(json);
-        json = NULL;
+        return NULL;
     }
-    if (json) {
-        cJSON *history = cJSON_CreateArray();
-        unsigned count =
-            wifi.event_count < WIFI_EVENT_HISTORY_SIZE ? wifi.event_count : WIFI_EVENT_HISTORY_SIZE;
-        if (!history)
-            cJSON_Delete(json), json = NULL;
-        for (unsigned i = 0; json && i < count; ++i) {
-            unsigned index = (wifi.event_count - count + i) % WIFI_EVENT_HISTORY_SIZE;
-            const wifi_diag_event_t *event = &wifi.events[index];
-            int64_t age = now >= event->at_us ? now - event->at_us : 0;
-            cJSON *item = cJSON_CreateObject();
-            if (!item || !cJSON_AddStringToObject(item, "event", wifi_event_name(event->type)) ||
-                !cJSON_AddNumberToObject(item, "age_seconds", age / 1000000) ||
-                !cJSON_AddNumberToObject(item, "reason", event->reason) ||
-                !cJSON_AddStringToObject(item, "reason_name", wifi_reason_name(event->reason)) ||
-                !cJSON_AddNumberToObject(item, "rssi", event->rssi) ||
-                !cJSON_AddNumberToObject(item, "retry_count", event->retry_count)) {
-                cJSON_Delete(item);
-                cJSON_Delete(history);
-                cJSON_Delete(json);
-                json = NULL;
-                break;
-            }
-            cJSON_AddItemToArray(history, item);
-        }
-        if (json && !cJSON_AddItemToObject(json, "wifi_history", history)) {
-            cJSON_Delete(history);
-            cJSON_Delete(json);
-            json = NULL;
-        }
+    return json;
+}
+
+static esp_err_t dashboard_get(httpd_req_t *req)
+{
+    return send_json(req, dashboard_json());
+}
+
+static bool authorized(httpd_req_t *req)
+{
+    char supplied[sizeof(control_token)];
+    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK)
+        return false;
+    return control_token[0] && !strcmp(supplied, control_token);
+}
+
+/* On rejection, preserve the HTTP send result separately from read success. */
+static bool read_authorized_body(httpd_req_t *req, response_buffer_t *buffer,
+                                 const char *invalid_request, esp_err_t *result)
+{
+    headers(req);
+    if (!authorized(req)) {
+        *result = httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
+        return false;
     }
-    return send_json(req, json);
+    if (!req->content_len || req->content_len >= buffer->capacity) {
+        *result = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, invalid_request);
+        return false;
+    }
+    while (buffer->length < req->content_len) {
+        int n =
+            httpd_req_recv(req, buffer->data + buffer->length, req->content_len - buffer->length);
+        if (n <= 0) {
+            *result = httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
+            return false;
+        }
+        buffer->length += n;
+    }
+    buffer->data[buffer->length] = 0;
+    return true;
+}
+
+static display_mode_t display_mode_from_name(const char *name)
+{
+    static const struct {
+        const char *name;
+        display_mode_t mode;
+    } modes[] = {
+        {"green", DISPLAY_AVAILABLE}, {"yellow", DISPLAY_BUSY},  {"red", DISPLAY_DO_NOT_DISTURB},
+        {"blue", DISPLAY_UNKNOWN},    {"rainbow", DISPLAY_PLAY},
+    };
+    if (name)
+        for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i)
+            if (!strcmp(name, modes[i].name))
+                return modes[i].mode;
+    return DISPLAY_MODE_COUNT;
 }
 
 static esp_err_t led_test_post(httpd_req_t *req)
 {
-    headers(req);
-    char supplied[sizeof(control_token)];
-    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
-        !control_token[0] || strcmp(supplied, control_token))
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
     char body[65];
-    if (req->content_len <= 0 || req->content_len >= sizeof(body))
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid test request");
-    size_t received = 0;
-    while (received < req->content_len) {
-        int n = httpd_req_recv(req, body + received, req->content_len - received);
-        if (n <= 0)
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
-        received += n;
-    }
-    body[received] = '\0';
-    response_buffer_t buffer = {.data = body, .length = received, .capacity = sizeof(body)};
+    response_buffer_t buffer = {.data = body, .capacity = sizeof(body)};
+    esp_err_t read_result;
+    if (!read_authorized_body(req, &buffer, "Invalid test request", &read_result))
+        return read_result;
     cJSON *json = response_json(&buffer);
     const char *name = json_string(json, "mode");
-    display_mode_t mode = DISPLAY_MODE_COUNT;
+    display_mode_t mode = display_mode_from_name(name);
     bool automatic = name && !strcmp(name, "auto");
-    if (name && !strcmp(name, "green"))
-        mode = DISPLAY_AVAILABLE;
-    else if (name && !strcmp(name, "yellow"))
-        mode = DISPLAY_BUSY;
-    else if (name && !strcmp(name, "red"))
-        mode = DISPLAY_DO_NOT_DISTURB;
-    else if (name && !strcmp(name, "blue"))
-        mode = DISPLAY_UNKNOWN;
-    else if (name && !strcmp(name, "rainbow"))
-        mode = DISPLAY_PLAY;
     cJSON_Delete(json);
     if (!automatic && mode == DISPLAY_MODE_COUNT)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown test mode");
@@ -317,32 +401,28 @@ static esp_err_t settings_error(httpd_req_t *req, const char *status, const char
     return send_json(req, json);
 }
 
+static const char *parse_settings_action(const cJSON *json, frame_settings_t *value, bool *reset)
+{
+    const char *action = json_string(json, "action");
+    *reset = action && !strcmp(action, "reset_auth");
+    if (*reset)
+        return NULL;
+    if (action && !strcmp(action, "save"))
+        return settings_parse_error(json, value);
+    return "request";
+}
+
 static esp_err_t settings_post_handler(httpd_req_t *req)
 {
-    headers(req);
-    char supplied[sizeof(control_token)];
-    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
-        !control_token[0] || strcmp(supplied, control_token))
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
     char body[1537];
-    if (!req->content_len || req->content_len >= sizeof(body))
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid settings request");
-    size_t received = 0;
-    while (received < req->content_len) {
-        int n = httpd_req_recv(req, body + received, req->content_len - received);
-        if (n <= 0)
-            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
-        received += n;
-    }
-    body[received] = 0;
-    response_buffer_t buffer = {.data = body, .length = received, .capacity = sizeof(body)};
+    response_buffer_t buffer = {.data = body, .capacity = sizeof(body)};
+    esp_err_t read_result;
+    if (!read_authorized_body(req, &buffer, "Invalid settings request", &read_result))
+        return read_result;
     cJSON *json = response_json(&buffer);
     frame_settings_t value;
-    const char *action = json_string(json, "action");
-    bool reset = action && !strcmp(action, "reset_auth");
-    const char *field = reset                               ? NULL
-                        : action && !strcmp(action, "save") ? settings_parse_error(json, &value)
-                                                            : "request";
+    bool reset;
+    const char *field = parse_settings_action(json, &value, &reset);
     cJSON_Delete(json);
     memset(body, 0, sizeof(body));
     if (field) {
@@ -369,9 +449,7 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
 static esp_err_t firmware_post(httpd_req_t *req)
 {
     headers(req);
-    char supplied[sizeof(control_token)];
-    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
-        !control_token[0] || strcmp(supplied, control_token))
+    if (!authorized(req))
         return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
     return firmware_update_upload(req);
 }
