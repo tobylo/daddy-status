@@ -20,3 +20,8 @@ managed_components/
 sdkconfig.frame.local
 sdkconfig.frame.local.old
 build-frame/
+
+# Private firmware signing keys and OTA build output
+*.pem
+sdkconfig.ota.local*
+build-ota/

@@ -35,4 +35,7 @@ esp_err_t settings_reset_auth(void);
  * Returns true when a scheduled reboot is due. */
 bool settings_tick(bool online, int64_t now);
 bool settings_trial(void);
+/* Reserve settings against saves/restarts while writing firmware; reject trials. */
+bool settings_update_begin(void);
+void settings_update_end(void);
 #endif

@@ -12,6 +12,10 @@ void wifi_diagnostics_snapshot(wifi_diagnostics_t *out)
 {
     memset(out, 0, sizeof(*out));
 }
+esp_err_t firmware_update_upload(httpd_req_t *req)
+{
+    return ESP_OK;
+}
 static int64_t now;
 static int registrations, stops, fail_registration;
 static bool fail_start, no_store;
@@ -137,6 +141,13 @@ static void dashboard_and_controls(void)
     cJSON_Delete(json);
     httpd_req_t req = {.content_len = 14};
     request_body = "{\"mode\":\"red\"}";
+    request_token = NULL;
+    assert(firmware_post(&req) == ESP_FAIL && error_status == 403);
+    request_token = "wrong";
+    assert(firmware_post(&req) == ESP_FAIL && error_status == 403);
+    request_token = control_token;
+    assert(firmware_post(&req) == ESP_OK);
+    request_token = NULL;
     assert(led_test_post(&req) == ESP_FAIL && error_status == 403);
     request_token = "wrong";
     assert(led_test_post(&req) == ESP_FAIL && error_status == 403);
@@ -175,7 +186,7 @@ int main(void)
     assert(web_server_start() == ESP_FAIL && !callback && stops == 1);
     registrations = 0;
     fail_registration = 0;
-    assert(web_server_start() == ESP_OK && registrations == 6 && callback);
+    assert(web_server_start() == ESP_OK && registrations == 7 && callback);
     check("waiting", "", 0);
     char borrowed[] = "ABCD-EFGH";
     callback(AUTH_CODE_READY, borrowed, 5000000);

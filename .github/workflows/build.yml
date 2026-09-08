@@ -11,7 +11,7 @@ jobs:
     container: espressif/idf:v6.1
     strategy:
       matrix:
-        configuration: [default, diagnostics, frame]
+        configuration: [default, diagnostics, frame, ota]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,7 +22,10 @@ jobs:
           BUILD_CONFIGURATION: ${{ matrix.configuration }}
         run: |
           . "$IDF_PATH/export.sh"
-          if [ "$BUILD_CONFIGURATION" = diagnostics ]; then
+          if [ "$BUILD_CONFIGURATION" = ota ]; then
+            espsecure generate-signing-key --version 1 secure_boot_signing_key.pem
+            idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ota' build
+          elif [ "$BUILD_CONFIGURATION" = diagnostics ]; then
             idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.diagnostics' build
           elif [ "$BUILD_CONFIGURATION" = frame ]; then
             idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame' build

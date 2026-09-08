@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "firmware_update.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -36,6 +37,7 @@ void app_main(void)
     wifi_init();
     ESP_ERROR_CHECK(web_server_start());
     ESP_ERROR_CHECK(graph_client_init(queue));
+    firmware_update_init();
     app_status_t status = {.service = SERVICE_CONNECTING, .presence = PRESENCE_UNKNOWN};
     display_mode_t previous = DISPLAY_MODE_COUNT;
     TickType_t refresh_ticks = task_ticks_ms(100);
@@ -43,6 +45,7 @@ void app_main(void)
     for (;;) {
         diagnostics_sample("main", &last_diagnostic);
         int64_t now = esp_timer_get_time();
+        firmware_update_tick(wifi_is_connected(), now);
         if (settings_tick(wifi_is_connected(), now))
             esp_restart();
         app_status_t received;

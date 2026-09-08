@@ -21,7 +21,7 @@ typedef struct {
 static settings_record_t record;
 static frame_settings_t current;
 static SemaphoreHandle_t mutex;
-static bool trial;
+static bool trial, firmware_update;
 static int brightness;
 static int64_t reboot_at, boot_at, next_commit;
 
@@ -268,7 +268,7 @@ esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *resul
     bool refresh = false;
     xSemaphoreTake(mutex, portMAX_DELAY);
     esp_err_t err = ESP_ERR_INVALID_STATE;
-    if (!trial && !reboot_at) {
+    if (!trial && !reboot_at && !firmware_update) {
         bool wifi = wifi_changed(s, &current);
         bool identity = strcmp(s->tenant, current.tenant) || strcmp(s->client, current.client);
         bool restart = wifi || identity || strcmp(s->ntp, current.ntp) ||
@@ -307,7 +307,7 @@ esp_err_t settings_reset_auth(void)
 {
     xSemaphoreTake(mutex, portMAX_DELAY);
     esp_err_t err = ESP_ERR_INVALID_STATE;
-    if (!trial && !reboot_at) {
+    if (!trial && !reboot_at && !firmware_update) {
         settings_record_t next = record;
         next.reset_auth = 1;
         err = persist(&next);
@@ -342,4 +342,21 @@ bool settings_tick(bool online, int64_t now)
     bool restart = reboot_at && now >= reboot_at;
     xSemaphoreGive(mutex);
     return restart;
+}
+
+bool settings_update_begin(void)
+{
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool allowed = !trial && !reboot_at && !firmware_update;
+    if (allowed)
+        firmware_update = true;
+    xSemaphoreGive(mutex);
+    return allowed;
+}
+
+void settings_update_end(void)
+{
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    firmware_update = false;
+    xSemaphoreGive(mutex);
 }

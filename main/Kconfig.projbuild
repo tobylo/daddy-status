@@ -1,5 +1,14 @@
 menu "Daddy Status"
 
+    config FRAME_OTA_ENABLE
+        bool "Enable signed wireless firmware uploads"
+        depends on SECURE_SIGNED_ON_UPDATE && BOOTLOADER_APP_ROLLBACK_ENABLE && PARTITION_TABLE_CUSTOM
+        default n
+        help
+            Accept signed application binaries at POST /api/firmware. Provision a
+            private signing key and the dual-slot partition table over USB first.
+
+
     config NTP_SERVER
         string "NTP server for TLS clock synchronization"
         default "pool.ntp.org"

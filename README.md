@@ -258,3 +258,12 @@ failures return `500` (`storage`). `POST /api/settings` accepts
 `X-Frame-Token` header as LED controls. Anyone on the trusted LAN who can load
 the page can change settings or reset sign-in. The local HTTP connection is not
 encrypted; do not expose it to untrusted networks.
+
+## Wireless firmware updates
+
+Signed OTA uploads and automatic boot rollback are available with the opt-in
+`sdkconfig.ota` profile. A one-time USB flash installs the dual-slot partition
+layout; subsequent signed application images can be uploaded over Wi-Fi without
+opening the frame. Default builds reject uploads. Follow the
+[provisioning, upload, and rollback guide](docs/firmware-updates.md), including
+signing-key backup and the first-boot health checks.

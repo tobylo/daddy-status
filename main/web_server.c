@@ -4,6 +4,7 @@
 #include "esp_http_server.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "firmware_update.h"
 #include "freertos/FreeRTOS.h"
 #include "protocol.h"
 #include "sdkconfig.h"
@@ -365,6 +366,16 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     return httpd_resp_send(req, responses[result], HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t firmware_post(httpd_req_t *req)
+{
+    headers(req);
+    char supplied[sizeof(control_token)];
+    if (httpd_req_get_hdr_value_str(req, "X-Frame-Token", supplied, sizeof(supplied)) != ESP_OK ||
+        !control_token[0] || strcmp(supplied, control_token))
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Reload the frame page");
+    return firmware_update_upload(req);
+}
+
 esp_err_t web_server_start(void)
 {
     unsigned char random[16];
@@ -387,6 +398,7 @@ esp_err_t web_server_start(void)
         {.uri = "/api/status", .method = HTTP_GET, .handler = dashboard_get},
         {.uri = "/api/settings", .method = HTTP_GET, .handler = settings_get_handler},
         {.uri = "/api/settings", .method = HTTP_POST, .handler = settings_post_handler},
+        {.uri = "/api/firmware", .method = HTTP_POST, .handler = firmware_post},
         {.uri = "/api/led-test", .method = HTTP_POST, .handler = led_test_post},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
