@@ -7,7 +7,15 @@ static settings_record_t disk;
 static bool exists, held;
 static int64_t clock_now;
 static esp_err_t store_error, token_error;
-static unsigned erased;
+static unsigned erased, writes, refreshes;
+void leds_refresh(void)
+{
+    assert(!held);
+    assert(settings_brightness() == disk.active.brightness ||
+           settings_brightness() == disk.candidate.brightness);
+    ++refreshes;
+}
+static settings_save_result_t result;
 SemaphoreHandle_t xSemaphoreCreateMutex(void)
 {
     return (void *)1;
@@ -58,6 +66,7 @@ esp_err_t nvs_get_blob(nvs_handle_t h, const char *key, void *out, size_t *n)
 }
 esp_err_t nvs_set_blob(nvs_handle_t h, const char *key, const void *in, size_t n)
 {
+    ++writes;
     assert(n == sizeof(disk));
     if (store_error)
         return store_error;
@@ -120,12 +129,34 @@ int main(void)
     assert(!strcmp(settings_parse_error(j, &next), "tenant"));
     cJSON_Delete(j);
     next = original;
+    /* Trailing bytes are not changes; no-op saves never touch NVS. */
+    next.ssid[sizeof(next.ssid) - 1] = 'x';
+    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
+    assert(writes == 0 && refreshes == 0 && !settings_tick(false, 3000000));
+    next = original;
+    next.brightness = 20;
+    store_error = ESP_FAIL;
+    assert(settings_save(&next, &result) == ESP_FAIL);
+    assert(settings_brightness() == original.brightness && refreshes == 0);
+    store_error = 0;
+    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_APPLIED);
+    assert(settings_brightness() == 20 && refreshes == 1 && !settings_tick(false, 3000000));
+    unsigned saved_writes = writes;
+    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
+    assert(writes == saved_writes && refreshes == 1);
+    j = settings_json();
+    assert(cJSON_GetObjectItem(j, "brightness")->valueint == 20);
+    cJSON_Delete(j);
+    assert(settings_init() == ESP_OK && !settings_trial() && settings_brightness() == 20);
+    assert(settings_save(&original, &result) == ESP_OK && result == SETTINGS_APPLIED);
+    assert(settings_init() == ESP_OK);
+    next = original;
     strcpy(next.ssid, "new-network");
     store_error = ESP_FAIL;
-    assert(settings_save(&next) == ESP_FAIL);
+    assert(settings_save(&next, &result) == ESP_FAIL);
     assert(!settings_tick(false, 3000000));
     store_error = 0;
-    assert(settings_save(&next) == ESP_OK);
+    assert(settings_save(&next, &result) == ESP_OK);
     j = settings_json();
     assert(cJSON_IsTrue(cJSON_GetObjectItem(j, "restart_pending")));
     cJSON_Delete(j);
@@ -141,21 +172,21 @@ int main(void)
     cJSON_Delete(j);
     clock_now = 0;
     assert(!strcmp(settings_get()->ssid, "new-network"));
-    assert(settings_save(&original) == ESP_ERR_INVALID_STATE);
+    assert(settings_save(&original, &result) == ESP_ERR_INVALID_STATE);
     assert(!settings_tick(false, 179999999));
     assert(settings_tick(false, 180000000));
     assert(settings_init() == ESP_OK && !settings_trial());
     assert(!strcmp(settings_get()->ssid, original.ssid));
-    assert(settings_save(&next) == ESP_OK);
+    assert(settings_save(&next, &result) == ESP_OK);
     assert(settings_init() == ESP_OK);
     assert(!settings_tick(true, 1000000) && !settings_trial());
     assert(settings_init() == ESP_OK && !strcmp(settings_get()->ssid, "new-network"));
     next = *settings_get();
     next.brightness = 20;
-    assert(settings_save(&next) == ESP_OK);
+    assert(settings_save(&next, &result) == ESP_OK);
     assert(settings_init() == ESP_OK);
-    /* An interrupted trial rolls back even before its timeout. */
-    assert(settings_init() == ESP_OK && settings_get()->brightness == 100);
+    assert(!settings_trial() && settings_brightness() == 20);
+    assert(settings_init() == ESP_OK && settings_brightness() == 20);
     assert(erased == 0);
     assert(settings_reset_auth() == ESP_OK && erased == 0);
     token_error = ESP_FAIL;
@@ -164,9 +195,28 @@ int main(void)
     assert(settings_init() == ESP_OK && !disk.reset_auth && erased == 2);
     next = *settings_get();
     strcpy(next.client, "33333333-3333-3333-3333-333333333333");
-    assert(settings_save(&next) == ESP_OK);
+    assert(settings_save(&next, &result) == ESP_OK);
     assert(settings_init() == ESP_OK && erased == 3);
-    assert(settings_init() == ESP_OK && erased == 4); /* rollback restores old identity safely */
+    assert(!settings_trial() && result == SETTINGS_RESTART);
+    assert(settings_init() == ESP_OK && erased == 3);
+    assert(!strcmp(settings_get()->client, next.client));
+    next.ntp[0] = 'a';
+    next.poll_seconds = 15;
+    next.stale_seconds = 90;
+    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_RESTART);
+    assert(settings_tick(false, 2000000));
+    assert(settings_init() == ESP_OK && !settings_trial());
+    assert(settings_get()->poll_seconds == 15 && settings_get()->stale_seconds == 90);
+    /* Password-only changes also trial; mixed identity changes reset on rollback. */
+    strcpy(next.password, "new-password");
+    strcpy(next.client, original.client);
+    next.brightness = 30;
+    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_WIFI_TRIAL);
+    assert(settings_brightness() == 30);
+    assert(settings_init() == ESP_OK && settings_trial() && erased == 4);
+    assert(settings_init() == ESP_OK && !settings_trial() && erased == 5);
+    assert(settings_brightness() == 20);
+    assert(strcmp(settings_get()->client, original.client));
     disk.version = 999;
     assert(settings_init() == ESP_OK && !settings_trial());
     assert(!strcmp(settings_get()->ssid, original.ssid));

@@ -195,7 +195,7 @@ static esp_err_t dashboard_get(httpd_req_t *req)
         !cJSON_AddNumberToObject(json, "poll_seconds", settings_get()->poll_seconds) ||
         !cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000) ||
         !cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) ||
-        !cJSON_AddNumberToObject(json, "brightness_percent", settings_get()->brightness) ||
+        !cJSON_AddNumberToObject(json, "brightness_percent", settings_brightness()) ||
         !cJSON_AddNumberToObject(json, "signal_rssi", wifi.has_signal ? wifi.rssi : 0) ||
         !cJSON_AddBoolToObject(json, "signal_known", wifi.has_signal) ||
         !cJSON_AddNumberToObject(json, "last_disconnect_reason",
@@ -348,14 +348,21 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         memset(&value, 0, sizeof(value));
         return settings_error(req, "400 Bad Request", "validation", field);
     }
-    esp_err_t err = reset ? settings_reset_auth() : settings_save(&value);
+    settings_save_result_t result = SETTINGS_RESTART;
+    esp_err_t err = reset ? settings_reset_auth() : settings_save(&value, &result);
     memset(&value, 0, sizeof(value));
     if (err == ESP_ERR_INVALID_STATE)
         return settings_error(req, "409 Conflict", "restart_or_trial_pending", NULL);
     if (err != ESP_OK)
         return settings_error(req, "500 Internal Server Error", "storage", NULL);
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+    const char *responses[] = {
+        "{\"ok\":true,\"outcome\":\"unchanged\"}",
+        "{\"ok\":true,\"outcome\":\"applied\"}",
+        "{\"ok\":true,\"outcome\":\"restart\"}",
+        "{\"ok\":true,\"outcome\":\"wifi_trial\"}",
+    };
+    return httpd_resp_send(req, responses[result], HTTPD_RESP_USE_STRLEN);
 }
 
 esp_err_t web_server_start(void)

@@ -36,7 +36,7 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <dt>Polling interval</dt><dd id="poll">—</dd><dt>LED data pin</dt><dd id="gpio">—</dd><dt>Brightness</dt><dd id="brightness">—</dd><dt>Uptime</dt><dd id="uptime">—</dd>
 </dl></section>
 <section class="card"><details><summary>Settings and recovery</summary>
-<p class="muted">Saving restarts the frame. If the new Wi-Fi cannot connect within three minutes, the previous settings return. Keep this page’s address or reconnect to the setup network if needed.</p>
+<p class="muted">Unchanged saves are skipped and brightness applies immediately. Other changes restart the frame. Wi-Fi changes try the new connection for three minutes and restore the previous settings if it fails. Keep this page’s address or reconnect to the setup network if needed.</p>
 <form id="settings-form">
 <label for="setting-ssid">Wi-Fi name (2.4 GHz)</label><input id="setting-ssid" aria-describedby="error-ssid" maxlength="32" required>
 <p id="error-ssid" class="field-error" hidden></p>
@@ -56,7 +56,7 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <p id="error-stale_seconds" class="field-error" hidden></p>
 <label for="setting-brightness">Brightness (1–100%)</label><input id="setting-brightness" aria-describedby="error-brightness" type="number" min="1" max="100" required>
 <p id="error-brightness" class="field-error" hidden></p>
-<button id="save-settings" type="submit" disabled>Save and restart</button>
+<button id="save-settings" type="submit" disabled>Save settings</button>
 </form>
 <p id="trial-status" role="status" aria-live="polite" hidden></p>
 <progress id="trial-progress" max="180" value="0" aria-label="Wi-Fi trial elapsed time" hidden></progress>
@@ -172,8 +172,8 @@ const fieldMessages={ssid:'Enter a Wi-Fi name of 1–32 bytes.',password:'Use 8�
 function clearFieldErrors(){
  Object.keys(fieldMessages).forEach(name=>{el('error-'+name).hidden=true;el('setting-'+name).removeAttribute('aria-invalid');});
 }
-function showRestart(){
- el('settings-status').textContent='Restart pending. Waiting for the frame to reconnect automatically. If its address changes, reconnect to its Wi-Fi and open the new address, or use setup Wi-Fi at http://192.168.4.1/.';
+function showRestart(wifiTrial=false){
+ el('settings-status').textContent='Restart pending'+(wifiTrial?' for a Wi-Fi connection trial':'')+'. Waiting for the frame to reconnect automatically. If its address changes, reconnect to its Wi-Fi and open the new address, or use setup Wi-Fi at http://192.168.4.1/.';
 }
 function tickTrial(){
  el('trial-status').hidden=el('trial-progress').hidden=!trialActive;
@@ -213,7 +213,13 @@ async function changeSettings(action){
     await loadSettings();
    }else{el('settings-status').textContent='The frame rejected the request. Try again once connected.';}
   }else{
-   restarting=true;restartToken=submittedToken;el('setting-password').value='';showRestart();
+   const data=await response.json();
+   const messages={unchanged:'No changes to save.',applied:'Saved. Brightness applied.',restart:'',wifi_trial:''};
+   if(!Object.hasOwn(messages,data.outcome))throw Error('Unknown save outcome');
+   el('setting-password').value='';
+   if(['restart','wifi_trial'].includes(data.outcome)){
+    restarting=true;restartToken=submittedToken;showRestart(data.outcome==='wifi_trial');
+   }else{el('settings-status').textContent=messages[data.outcome];}
   }
  }catch(error){el('settings-status').textContent='Change not confirmed: connection lost. Reconnecting automatically to check the frame. Your entered settings are kept until a reboot is detected.';}
  clearTimeout(timeout);settingsBusy=false;enableTests();
