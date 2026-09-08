@@ -314,6 +314,59 @@ static void rejected_tokens_and_deadlines(void)
     assert(auth_client_ensure(&auth, &retry) == ESP_FAIL && !auth.access_token && !handles);
 }
 
+static void polling_backoff(void)
+{
+    const exchange_t steps[] = {
+        {"/devicecode", 200, DEVICE, ESP_OK, 0}, {"/token", 200, TOKENS, ESP_FAIL, 0},
+        {"/token", 503, "{}", ESP_OK, 0},        {"/token", 429, "{}", ESP_OK, 45},
+        {"/token", 503, "{}", ESP_OK, 0},        {"/token", 503, "{}", ESP_OK, 0},
+        {"/token", 200, TOKENS, ESP_OK, 0},
+    };
+    reset(steps, sizeof(steps) / sizeof(steps[0]));
+    auth_client_t auth = {0};
+    unsigned retry;
+    assert(auth_client_ensure(&auth, &retry) == ESP_OK);
+    assert(request_count == 7 && sleep_count == 8);
+    /* A 45-second interval doubles to 90 once, then stays at 90.
+       task_wait_seconds splits each 90-second wait into 60 + 30. */
+    const unsigned expected[] = {5, 10, 20, 45, 60, 30, 60, 30};
+    assert(!memcmp(sleeps, expected, sizeof(expected)));
+    assert(auth.error == SERVICE_ERROR_NONE && retry == 0);
+    auth_client_invalidate(&auth);
+}
+
+static void device_response_validation(void)
+{
+    const char *invalid[] = {
+        "{}",
+        "{\"device_code\":\"a+b&c\",\"user_code\":\"ABCD-EFGH\",\"expires_in\":900}",
+        "{\"device_code\":\"a+b&c\",\"user_code\":\"ABCD-EFGH\","
+        "\"message\":\"Login\",\"expires_in\":900,\"interval\":0}",
+    };
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        const exchange_t steps[] = {{"/devicecode", 200, invalid[i], ESP_OK, 17}};
+        reset(steps, 1);
+        auth_client_t auth = {0};
+        unsigned retry, events = code_events;
+        assert(auth_client_ensure(&auth, &retry) == ESP_ERR_INVALID_RESPONSE);
+        assert(request_count == 1 && sleep_count == 0 && retry == 17);
+        assert(code_events == events && !auth.access_token);
+    }
+    const exchange_t default_interval[] = {
+        {"/devicecode", 200,
+         "{\"device_code\":\"a+b&c\",\"user_code\":\"ABCD-EFGH\","
+         "\"message\":\"Login\",\"expires_in\":900}",
+         ESP_OK, 0},
+        {"/token", 200, TOKENS, ESP_OK, 0},
+    };
+    reset(default_interval, 2);
+    auth_client_t auth = {0};
+    unsigned retry;
+    assert(auth_client_ensure(&auth, &retry) == ESP_OK);
+    assert(request_count == 2 && sleep_count == 1 && sleeps[0] == 5);
+    auth_client_invalidate(&auth);
+}
+
 static void presence_mapping(void)
 {
     const struct {
@@ -348,6 +401,8 @@ int main(void)
     terminal_auth_errors();
     rejected_tokens_and_deadlines();
     assert(last_event == AUTH_RETRYING);
+    polling_backoff();
+    device_response_validation();
     presence_mapping();
     reset(NULL, 0);
     task_wait_seconds(121);
