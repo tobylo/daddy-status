@@ -38,45 +38,96 @@ static void record_event(wifi_diag_event_type_t type, int64_t now, uint8_t reaso
     portEXIT_CRITICAL(&diagnostics_lock);
 }
 
+static void set_next_retry(int64_t at_us)
+{
+    portENTER_CRITICAL(&diagnostics_lock);
+    diagnostics.next_retry_at_us = at_us;
+    portEXIT_CRITICAL(&diagnostics_lock);
+}
+
+static void set_signal(int8_t rssi)
+{
+    portENTER_CRITICAL(&diagnostics_lock);
+    diagnostics.has_signal = true;
+    diagnostics.rssi = rssi;
+    portEXIT_CRITICAL(&diagnostics_lock);
+}
+
+static void on_got_ip(const ip_event_got_ip_t *event)
+{
+    wifi_ap_record_t ap;
+    ESP_LOGI("wifi", "Open http://" IPSTR "/ to sign in", IP2STR(&event->ip_info.ip));
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+        set_signal(ap.rssi);
+    xEventGroupSetBits(wifi_events, CONNECTED_BIT);
+    set_next_retry(0);
+    record_event(WIFI_DIAG_CONNECTED, esp_timer_get_time(), 0, diagnostics.rssi);
+}
+
+static void on_associated(const wifi_event_sta_connected_t *event)
+{
+    ESP_LOGI("wifi", "Associated on channel %u; waiting for DHCP", event->channel);
+}
+
+static void on_disconnected(const wifi_event_sta_disconnected_t *event)
+{
+    ESP_LOGW("wifi", "Disconnected: reason=%u, RSSI=%d dBm", event->reason, event->rssi);
+    portENTER_CRITICAL(&diagnostics_lock);
+    diagnostics.has_disconnect = true;
+    diagnostics.last_disconnect_reason = event->reason;
+    diagnostics.has_signal = true;
+    diagnostics.rssi = event->rssi;
+    portEXIT_CRITICAL(&diagnostics_lock);
+    record_event(WIFI_DIAG_DISCONNECTED, esp_timer_get_time(), event->reason, event->rssi);
+    xEventGroupClearBits(wifi_events, CONNECTED_BIT);
+    xEventGroupSetBits(wifi_events, DISCONNECTED_BIT);
+}
+
+static void on_started(void)
+{
+    xEventGroupClearBits(wifi_events, CONNECTED_BIT);
+    xEventGroupSetBits(wifi_events, STARTED_BIT);
+}
+
 static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *data)
 {
-    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = data;
-        wifi_ap_record_t ap;
-        ESP_LOGI("wifi", "Open http://" IPSTR "/ to sign in", IP2STR(&event->ip_info.ip));
-        if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
-            portENTER_CRITICAL(&diagnostics_lock);
-            diagnostics.has_signal = true;
-            diagnostics.rssi = ap.rssi;
-            portEXIT_CRITICAL(&diagnostics_lock);
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP)
+        on_got_ip(data);
+    else if (base == WIFI_EVENT) {
+        switch (id) {
+        case WIFI_EVENT_STA_CONNECTED:
+            on_associated(data);
+            break;
+        case WIFI_EVENT_STA_DISCONNECTED:
+            on_disconnected(data);
+            break;
+        case WIFI_EVENT_STA_START:
+            on_started();
+            break;
+        default:
+            break;
         }
-        xEventGroupSetBits(wifi_events, CONNECTED_BIT);
-        portENTER_CRITICAL(&diagnostics_lock);
-        diagnostics.next_retry_at_us = 0;
-        portEXIT_CRITICAL(&diagnostics_lock);
-        record_event(WIFI_DIAG_CONNECTED, esp_timer_get_time(), 0, diagnostics.rssi);
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
-        wifi_event_sta_connected_t *event = data;
-        ESP_LOGI("wifi", "Associated on channel %u; waiting for DHCP", event->channel);
-    } else if (base == WIFI_EVENT &&
-               (id == WIFI_EVENT_STA_START || id == WIFI_EVENT_STA_DISCONNECTED)) {
-        if (id == WIFI_EVENT_STA_DISCONNECTED) {
-            wifi_event_sta_disconnected_t *event = data;
-            ESP_LOGW("wifi", "Disconnected: reason=%u, RSSI=%d dBm", event->reason, event->rssi);
-            portENTER_CRITICAL(&diagnostics_lock);
-            diagnostics.has_disconnect = true;
-            diagnostics.last_disconnect_reason = event->reason;
-            diagnostics.has_signal = true;
-            diagnostics.rssi = event->rssi;
-            portEXIT_CRITICAL(&diagnostics_lock);
-            record_event(WIFI_DIAG_DISCONNECTED, esp_timer_get_time(), event->reason, event->rssi);
-        }
-        xEventGroupClearBits(wifi_events, CONNECTED_BIT);
     }
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START)
-        xEventGroupSetBits(wifi_events, STARTED_BIT);
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED)
-        xEventGroupSetBits(wifi_events, DISCONNECTED_BIT);
+}
+
+static bool enter_recovery(int64_t now)
+{
+    const char *password = CONFIG_SETUP_PASSWORD;
+    if (strlen(password) < 12 || strlen(password) > 63)
+        return false; /* Explicitly configured secret required; never start an open AP. */
+    if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK)
+        return false;
+    ESP_LOGW("wifi", "Recovery Wi-Fi enabled; open http://192.168.4.1/");
+    record_event(WIFI_DIAG_RECOVERY_AP_ENABLED, now, 0, diagnostics.rssi);
+    return true;
+}
+
+static bool leave_recovery(int64_t now)
+{
+    if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
+        return false;
+    record_event(WIFI_DIAG_RECOVERY_AP_DISABLED, now, 0, diagnostics.rssi);
+    return true;
 }
 
 /* The Wi-Fi worker owns driver operations and recovery state. */
@@ -88,18 +139,9 @@ static void recovery_tick(int64_t now)
     bool needed = !online && (!settings_get()->ssid[0] || now - last_online >= 180000000);
     if (needed == recovery)
         return;
-    if (needed) {
-        const char *password = CONFIG_SETUP_PASSWORD;
-        if (strlen(password) < 12 || strlen(password) > 63)
-            return; /* Explicitly configured secret required; never start an open AP. */
-        if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK)
-            return;
-        ESP_LOGW("wifi", "Recovery Wi-Fi enabled; open http://192.168.4.1/");
-        record_event(WIFI_DIAG_RECOVERY_AP_ENABLED, now, 0, diagnostics.rssi);
-    } else if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
+    bool changed = needed ? enter_recovery(now) : leave_recovery(now);
+    if (!changed)
         return;
-    if (!needed)
-        record_event(WIFI_DIAG_RECOVERY_AP_DISABLED, now, 0, diagnostics.rssi);
     portENTER_CRITICAL(&diagnostics_lock);
     recovery = needed;
     diagnostics.recovery_ap = needed;
@@ -117,11 +159,11 @@ static EventBits_t worker_wait(EventBits_t mask, TickType_t timeout)
         recovery_tick(esp_timer_get_time());
         if (bits & mask)
             return bits;
-        if (timeout != portMAX_DELAY) {
-            timeout -= part;
-            if (!timeout)
-                return bits;
-        }
+        if (timeout == portMAX_DELAY)
+            continue;
+        timeout -= part;
+        if (!timeout)
+            return bits;
     }
 }
 
@@ -154,6 +196,60 @@ static void cancel_attempt(void)
     wait_started();
 }
 
+static void record_retry_started(void)
+{
+    portENTER_CRITICAL(&diagnostics_lock);
+    diagnostics.retry_count++;
+    diagnostics.next_retry_at_us = 0;
+    portEXIT_CRITICAL(&diagnostics_lock);
+    record_event(WIFI_DIAG_RETRY_STARTED, esp_timer_get_time(), 0, diagnostics.rssi);
+}
+
+static void reset_retries(void)
+{
+    portENTER_CRITICAL(&diagnostics_lock);
+    diagnostics.retry_count = 0;
+    diagnostics.next_retry_at_us = 0;
+    portEXIT_CRITICAL(&diagnostics_lock);
+}
+
+static EventBits_t attempt_connect(void)
+{
+    xEventGroupClearBits(wifi_events, DISCONNECTED_BIT);
+    record_retry_started();
+    esp_err_t err = esp_wifi_connect();
+    if (err != ESP_OK) {
+        ESP_LOGW("wifi", "Connect attempt failed: %s", esp_err_to_name(err));
+        cancel_attempt();
+        return 0;
+    }
+    /* Association alone is insufficient; allow time for DHCP too. */
+    EventBits_t result = worker_wait(CONNECTED_BIT | DISCONNECTED_BIT, task_ticks_ms(30000));
+    if (!(result & (CONNECTED_BIT | DISCONNECTED_BIT))) {
+        ESP_LOGW("wifi", "Connection/DHCP timed out after 30 seconds");
+        record_event(WIFI_DIAG_TIMEOUT, esp_timer_get_time(), 0, diagnostics.rssi);
+        cancel_attempt();
+    }
+    return result;
+}
+
+static bool connection_established(EventBits_t result)
+{
+    return (result & CONNECTED_BIT) && !(result & DISCONNECTED_BIT);
+}
+
+static void wait_before_retry(unsigned backoff)
+{
+    set_next_retry(esp_timer_get_time() + (int64_t)backoff * 1000000);
+    record_event(WIFI_DIAG_RETRY_WAITING, esp_timer_get_time(), 0, diagnostics.rssi);
+    worker_delay(backoff);
+}
+
+static unsigned next_backoff(unsigned backoff)
+{
+    return backoff > 15 ? 30 : backoff * 2;
+}
+
 static void wifi_worker(void *unused)
 {
     unsigned backoff = 1;
@@ -165,42 +261,13 @@ static void wifi_worker(void *unused)
             worker_delay(30);
             continue;
         }
-        xEventGroupClearBits(wifi_events, DISCONNECTED_BIT);
-        portENTER_CRITICAL(&diagnostics_lock);
-        diagnostics.retry_count++;
-        diagnostics.next_retry_at_us = 0;
-        portEXIT_CRITICAL(&diagnostics_lock);
-        record_event(WIFI_DIAG_RETRY_STARTED, esp_timer_get_time(), 0, diagnostics.rssi);
-        esp_err_t err = esp_wifi_connect();
-        EventBits_t result = 0;
-        if (err == ESP_OK) {
-            /* Association alone is insufficient; allow time for DHCP too. */
-            result = worker_wait(CONNECTED_BIT | DISCONNECTED_BIT, task_ticks_ms(30000));
-            if (!(result & (CONNECTED_BIT | DISCONNECTED_BIT))) {
-                ESP_LOGW("wifi", "Connection/DHCP timed out after 30 seconds");
-                record_event(WIFI_DIAG_TIMEOUT, esp_timer_get_time(), 0, diagnostics.rssi);
-                cancel_attempt();
-            }
-        } else {
-            ESP_LOGW("wifi", "Connect attempt failed: %s", esp_err_to_name(err));
-            cancel_attempt();
-        }
-        if ((result & CONNECTED_BIT) && !(result & DISCONNECTED_BIT)) {
+        if (connection_established(attempt_connect())) {
             backoff = 1;
-            portENTER_CRITICAL(&diagnostics_lock);
-            diagnostics.retry_count = 0;
-            diagnostics.next_retry_at_us = 0;
-            portEXIT_CRITICAL(&diagnostics_lock);
+            reset_retries();
             worker_wait(DISCONNECTED_BIT, portMAX_DELAY);
         }
-        int64_t next_retry = esp_timer_get_time() + (int64_t)backoff * 1000000;
-        portENTER_CRITICAL(&diagnostics_lock);
-        diagnostics.next_retry_at_us = next_retry;
-        portEXIT_CRITICAL(&diagnostics_lock);
-        record_event(WIFI_DIAG_RETRY_WAITING, esp_timer_get_time(), 0, diagnostics.rssi);
-        worker_delay(backoff);
-        if (backoff < 30)
-            backoff = backoff > 15 ? 30 : backoff * 2;
+        wait_before_retry(backoff);
+        backoff = next_backoff(backoff);
     }
 }
 
