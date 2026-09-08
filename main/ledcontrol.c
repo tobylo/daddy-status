@@ -79,7 +79,7 @@ static bool take_mode_change(display_mode_t *mode, int64_t *started, TickType_t 
     display_mode_t next;
     if (xQueueReceive(mode_queue, &next, wait) != pdTRUE)
         return false;
-    if (next >= DISPLAY_MODE_COUNT || next == *mode)
+    if ((unsigned)next >= DISPLAY_MODE_COUNT || next == *mode)
         return false;
     *mode = next;
     *started = esp_timer_get_time();
