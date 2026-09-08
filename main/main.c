@@ -45,7 +45,6 @@ void app_main(void)
         int64_t now = esp_timer_get_time();
         if (settings_tick(wifi_is_connected(), now))
             esp_restart();
-        wifi_recovery_tick(now);
         app_status_t received;
         if (xQueueReceive(queue, &received, refresh_ticks) == pdTRUE)
             status = received;

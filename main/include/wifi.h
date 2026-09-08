@@ -37,6 +37,5 @@ typedef struct {
 void wifi_init(void);
 void wifi_wait_connected(void);
 bool wifi_is_connected(void);
-void wifi_recovery_tick(int64_t now);
 void wifi_diagnostics_snapshot(wifi_diagnostics_t *out);
 #endif

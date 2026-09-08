@@ -12,7 +12,7 @@
 #include <string.h>
 
 static EventGroupHandle_t wifi_events;
-static TaskHandle_t reconnect_task;
+static TaskHandle_t wifi_task;
 static bool recovery;
 static int64_t last_online;
 static portMUX_TYPE diagnostics_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -20,6 +20,9 @@ static wifi_diagnostics_t diagnostics;
 #define CONNECTED_BIT BIT0
 #define DISCONNECTED_BIT BIT1
 #define STARTED_BIT BIT2
+#define INITIALIZED_BIT (1U << 3)
+
+static void initialize_wifi(void);
 
 static void record_event(wifi_diag_event_type_t type, int64_t now, uint8_t reason, int8_t rssi)
 {
@@ -76,6 +79,61 @@ static void event_handler(void *ctx, esp_event_base_t base, int32_t id, void *da
         xEventGroupSetBits(wifi_events, DISCONNECTED_BIT);
 }
 
+/* The Wi-Fi worker owns driver operations and recovery state. */
+static void recovery_tick(int64_t now)
+{
+    bool online = wifi_is_connected();
+    if (online)
+        last_online = now;
+    bool needed = !online && (!settings_get()->ssid[0] || now - last_online >= 180000000);
+    if (needed == recovery)
+        return;
+    if (needed) {
+        const char *password = CONFIG_SETUP_PASSWORD;
+        if (strlen(password) < 12 || strlen(password) > 63)
+            return; /* Explicitly configured secret required; never start an open AP. */
+        if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK)
+            return;
+        ESP_LOGW("wifi", "Recovery Wi-Fi enabled; open http://192.168.4.1/");
+        record_event(WIFI_DIAG_RECOVERY_AP_ENABLED, now, 0, diagnostics.rssi);
+    } else if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
+        return;
+    if (!needed)
+        record_event(WIFI_DIAG_RECOVERY_AP_DISABLED, now, 0, diagnostics.rssi);
+    portENTER_CRITICAL(&diagnostics_lock);
+    recovery = needed;
+    diagnostics.recovery_ap = needed;
+    portEXIT_CRITICAL(&diagnostics_lock);
+}
+
+/* Bound worker waits so recovery also progresses during DHCP and backoff. */
+static EventBits_t worker_wait(EventBits_t mask, TickType_t timeout)
+{
+    const TickType_t slice = task_ticks_ms(1000);
+    for (;;) {
+        recovery_tick(esp_timer_get_time());
+        TickType_t part = timeout < slice ? timeout : slice;
+        EventBits_t bits = xEventGroupWaitBits(wifi_events, mask, pdFALSE, pdFALSE, part);
+        recovery_tick(esp_timer_get_time());
+        if (bits & mask)
+            return bits;
+        if (timeout != portMAX_DELAY) {
+            timeout -= part;
+            if (!timeout)
+                return bits;
+        }
+    }
+}
+
+static void worker_delay(unsigned seconds)
+{
+    while (seconds--) {
+        recovery_tick(esp_timer_get_time());
+        vTaskDelay(task_ticks_ms(1000));
+    }
+    recovery_tick(esp_timer_get_time());
+}
+
 /* Wait for the driver to start before issuing any connection attempt. */
 static void wait_started(void)
 {
@@ -85,9 +143,7 @@ static void wait_started(void)
 static void cancel_attempt(void)
 {
     esp_err_t err = esp_wifi_disconnect();
-    if (err == ESP_OK &&
-        (xEventGroupWaitBits(wifi_events, DISCONNECTED_BIT, pdFALSE, pdFALSE, task_ticks_ms(5000)) &
-         DISCONNECTED_BIT))
+    if (err == ESP_OK && (worker_wait(DISCONNECTED_BIT, task_ticks_ms(5000)) & DISCONNECTED_BIT))
         return;
     /* No disconnect acknowledgement: restart the station before retrying.
      * Stop completes synchronously, preventing overlapping connection attempts. */
@@ -98,13 +154,15 @@ static void cancel_attempt(void)
     wait_started();
 }
 
-static void reconnect(void *unused)
+static void wifi_worker(void *unused)
 {
     unsigned backoff = 1;
+    initialize_wifi();
+    xEventGroupSetBits(wifi_events, INITIALIZED_BIT);
     wait_started();
     for (;;) {
         if (!settings_get()->ssid[0]) {
-            vTaskDelay(task_ticks_ms(30000));
+            worker_delay(30);
             continue;
         }
         xEventGroupClearBits(wifi_events, DISCONNECTED_BIT);
@@ -117,8 +175,7 @@ static void reconnect(void *unused)
         EventBits_t result = 0;
         if (err == ESP_OK) {
             /* Association alone is insufficient; allow time for DHCP too. */
-            result = xEventGroupWaitBits(wifi_events, CONNECTED_BIT | DISCONNECTED_BIT, pdFALSE,
-                                         pdFALSE, task_ticks_ms(30000));
+            result = worker_wait(CONNECTED_BIT | DISCONNECTED_BIT, task_ticks_ms(30000));
             if (!(result & (CONNECTED_BIT | DISCONNECTED_BIT))) {
                 ESP_LOGW("wifi", "Connection/DHCP timed out after 30 seconds");
                 record_event(WIFI_DIAG_TIMEOUT, esp_timer_get_time(), 0, diagnostics.rssi);
@@ -134,25 +191,23 @@ static void reconnect(void *unused)
             diagnostics.retry_count = 0;
             diagnostics.next_retry_at_us = 0;
             portEXIT_CRITICAL(&diagnostics_lock);
-            xEventGroupWaitBits(wifi_events, DISCONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+            worker_wait(DISCONNECTED_BIT, portMAX_DELAY);
         }
         int64_t next_retry = esp_timer_get_time() + (int64_t)backoff * 1000000;
         portENTER_CRITICAL(&diagnostics_lock);
         diagnostics.next_retry_at_us = next_retry;
         portEXIT_CRITICAL(&diagnostics_lock);
         record_event(WIFI_DIAG_RETRY_WAITING, esp_timer_get_time(), 0, diagnostics.rssi);
-        vTaskDelay(task_ticks_ms(backoff * 1000));
+        worker_delay(backoff);
         if (backoff < 30)
             backoff = backoff > 15 ? 30 : backoff * 2;
     }
 }
 
-void wifi_init(void)
+static void initialize_wifi(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_events = xEventGroupCreate();
-    ESP_ERROR_CHECK(wifi_events ? ESP_OK : ESP_ERR_NO_MEM);
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
     ESP_ERROR_CHECK(netif ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(esp_netif_set_hostname(netif, "daddy-status"));
@@ -181,10 +236,6 @@ void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(xTaskCreate(reconnect, "wifi_reconnect", 3072, NULL, 4, &reconnect_task) ==
-                            pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
 #if CONFIG_POWER_SAVE_MAX_MODEM
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
 #elif CONFIG_POWER_SAVE_MIN_MODEM
@@ -192,6 +243,17 @@ void wifi_init(void)
 #else
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 #endif
+}
+
+void wifi_init(void)
+{
+    wifi_events = xEventGroupCreate();
+    ESP_ERROR_CHECK(wifi_events ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreate(wifi_worker, "wifi_worker", 4096, NULL, 4, &wifi_task) == pdPASS
+                        ? ESP_OK
+                        : ESP_ERR_NO_MEM);
+    /* Callers can start network services once the worker finishes driver setup. */
+    xEventGroupWaitBits(wifi_events, INITIALIZED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
 }
 
 void wifi_wait_connected(void)
@@ -202,33 +264,6 @@ void wifi_wait_connected(void)
 bool wifi_is_connected(void)
 {
     return wifi_events && (xEventGroupGetBits(wifi_events) & CONNECTED_BIT);
-}
-
-/* Main task owns AP transitions. A failed station connection remains retryable. */
-void wifi_recovery_tick(int64_t now)
-{
-    bool online = wifi_is_connected();
-    if (online)
-        last_online = now;
-    bool needed = !online && (!settings_get()->ssid[0] || now - last_online >= 180000000);
-    if (needed == recovery)
-        return;
-    if (needed) {
-        const char *password = CONFIG_SETUP_PASSWORD;
-        if (strlen(password) < 12 || strlen(password) > 63)
-            return; /* Explicitly configured secret required; never start an open AP. */
-        if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK)
-            return;
-        ESP_LOGW("wifi", "Recovery Wi-Fi enabled; open http://192.168.4.1/");
-        record_event(WIFI_DIAG_RECOVERY_AP_ENABLED, now, 0, diagnostics.rssi);
-    } else if (esp_wifi_set_mode(WIFI_MODE_STA) != ESP_OK)
-        return;
-    if (!needed)
-        record_event(WIFI_DIAG_RECOVERY_AP_DISABLED, now, 0, diagnostics.rssi);
-    portENTER_CRITICAL(&diagnostics_lock);
-    recovery = needed;
-    diagnostics.recovery_ap = needed;
-    portEXIT_CRITICAL(&diagnostics_lock);
 }
 
 void wifi_diagnostics_snapshot(wifi_diagnostics_t *out)

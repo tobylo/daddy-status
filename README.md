@@ -197,7 +197,9 @@ Hardware results and remaining checks are in `docs/validation.md`.
 Successful presence requests are scheduled on the configured interval rather
 than sleeping a full interval after each request. Slow requests skip missed
 slots; service failures and throttling use separate retry delays. The Wi-Fi
-worker waits up to 30 seconds for connection and DHCP before cancelling/retrying.
+worker owns driver setup, connection retries, and recovery AP transitions. It
+waits up to 30 seconds for connection and DHCP before cancelling/retrying, checking
+recovery once per second during connection waits and retry backoff.
 
 ## Frame dashboard
 

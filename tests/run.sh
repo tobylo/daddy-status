@@ -28,7 +28,7 @@ run_test http tests/test_http.c main/http_transport.c main/protocol.c "$CJSON/cJ
 run_test web tests/settings_stub.c tests/test_web.c main/protocol.c "$CJSON/cJSON.c"
 run_test graph_worker tests/settings_stub.c tests/test_graph_worker.c main/protocol.c main/presence.c \
     main/app_state.c main/diagnostics.c "$CJSON/cJSON.c"
-run_test wifi_worker tests/settings_stub.c tests/test_wifi_worker.c
+run_test wifi_worker tests/test_wifi_worker.c
 run_test poll_timing tests/test_poll_timing.c
 
 run_test settings tests/test_settings.c main/protocol.c "$CJSON/cJSON.c"
