@@ -217,6 +217,13 @@ int main(void)
     assert(settings_init() == ESP_OK && !settings_trial() && erased == 5);
     assert(settings_brightness() == 20);
     assert(strcmp(settings_get()->client, original.client));
+    assert(settings_update_begin());
+    assert(!settings_update_begin());
+    assert(settings_save(settings_get(), &result) == ESP_ERR_INVALID_STATE);
+    assert(settings_reset_auth() == ESP_ERR_INVALID_STATE);
+    settings_update_end();
+    assert(settings_update_begin());
+    settings_update_end();
     disk.version = 999;
     assert(settings_init() == ESP_OK && !settings_trial());
     assert(!strcmp(settings_get()->ssid, original.ssid));

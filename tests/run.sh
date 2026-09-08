@@ -32,3 +32,6 @@ run_test wifi_worker tests/test_wifi_worker.c
 run_test poll_timing tests/test_poll_timing.c
 
 run_test settings tests/test_settings.c main/protocol.c "$CJSON/cJSON.c"
+run_test ota -DCONFIG_FRAME_OTA_ENABLE=1 -DCONFIG_SECURE_SIGNED_ON_UPDATE=1 \
+    -DCONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=1 tests/test_ota.c
+run_test ota_disabled tests/test_ota.c

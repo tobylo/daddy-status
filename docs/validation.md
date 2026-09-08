@@ -214,3 +214,26 @@ lost save responses, and automatic form/control recovery after reboot or rollbac
 On hardware, keep the page open through save/reset and a failed Wi-Fi trial;
 verify that controls unlock after reconnection and that a changed IP is handled
 using the recovery guidance shown on the page.
+
+## Signed wireless firmware updates (hardware acceptance pending)
+
+Host tests cover split uploads, interrupted writes, signature-verification
+failure propagation, inactive-slot selection, settings exclusion, and 30-second
+Wi-Fi probation / three-minute rollback. CI also builds the signed OTA profile
+with a disposable ECDSA key. These checks do not emulate flash power loss or
+prove radio/bootloader behavior on the frame.
+
+Before closing the frame, provision per [the OTA guide](firmware-updates.md) and:
+
+- Upload a release signed with the provisioned key; observe reboot and the
+  `Firmware health check passed` log after 30 seconds of stable Wi-Fi.
+- Reject unsigned, modified, wrong-key, oversized, and truncated images; verify
+  the running image and saved settings remain usable.
+- Interrupt power during transfer; verify the original slot boots. Interrupt
+  power after candidate boot but before confirmation; verify rollback.
+- Install a signed test build that fails startup, then one that cannot establish
+  Wi-Fi; verify crash/reset rollback and the three-minute health timeout.
+- Confirm settings saves/reset and a second update cannot race an upload, and
+  uploads are rejected during settings trials and firmware probation.
+- Repeat a successful update in the opposite slot direction; check retained
+  Wi-Fi settings and Microsoft sign-in. Keep NVS formats backward compatible.
