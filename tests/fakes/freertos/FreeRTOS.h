@@ -1,6 +1,10 @@
 #ifndef TEST_FREERTOS_H
 #define TEST_FREERTOS_H
 #include <stdint.h>
+typedef int portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED 0
+#define portENTER_CRITICAL(m) ((void)(m))
+#define portEXIT_CRITICAL(m) ((void)(m))
 typedef uint32_t TickType_t;
 typedef int BaseType_t;
 typedef void *TaskHandle_t;

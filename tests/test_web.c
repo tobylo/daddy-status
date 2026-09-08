@@ -8,6 +8,10 @@ typedef int portMUX_TYPE;
 #define portEXIT_CRITICAL(m) ((void)(m))
 #include "../main/web_server.c"
 const char test_page[] __asm__("_binary_auth_html_start") = "<!doctype html>";
+void wifi_diagnostics_snapshot(wifi_diagnostics_t *out)
+{
+    memset(out, 0, sizeof(*out));
+}
 static int64_t now;
 static int registrations, stops, fail_registration;
 static bool fail_start, no_store;

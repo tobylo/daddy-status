@@ -136,6 +136,11 @@ esp_err_t esp_wifi_set_ps(int mode)
 {
     return ESP_OK;
 }
+esp_err_t esp_wifi_sta_get_ap_info(wifi_ap_record_t *record)
+{
+    record->rssi = -40;
+    return ESP_OK;
+}
 BaseType_t xTaskCreate(void (*fn)(void *), const char *name, unsigned stack, void *arg,
                        unsigned priority, TaskHandle_t *handle)
 {
@@ -192,6 +197,12 @@ int main(void)
     bits |= CONNECTED_BIT;
     wifi_recovery_tick(180000001);
     assert(!recovery && selected_mode == WIFI_MODE_STA);
+    wifi_diagnostics_t diagnostics_snapshot;
+    wifi_diagnostics_snapshot(&diagnostics_snapshot);
+    assert(diagnostics_snapshot.has_signal && diagnostics_snapshot.rssi == -45);
+    assert(diagnostics_snapshot.has_disconnect && diagnostics_snapshot.last_disconnect_reason == 2);
+    assert(diagnostics_snapshot.event_count >= 8);
+    assert(!diagnostics_snapshot.recovery_ap);
     puts("Wi-Fi startup, retry backoff, association/DHCP distinction, and disconnect tests passed");
 }
 

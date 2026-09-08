@@ -3,13 +3,13 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const html=readFileSync(new URL('../main/auth.html',import.meta.url),'utf8');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{textContent:'',hidden:true,value:'',checked:false,addEventListener(event,fn){this[event]=fn;}}]));
+const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{textContent:'',hidden:true,value:'',checked:false,children:[],appendChild(child){this.children.push(child);},addEventListener(event,fn){this[event]=fn;}}]));
 const buttons=[...html.matchAll(/data-mode="([^"]+)"/g)].map(([,mode])=>({dataset:{mode},disabled:true,addEventListener(event,fn){this.click=fn;}}));
 let now=0, fail=false, postStatus=200, lastRequest;
 const base={connected:true,error:'none',service:'ready',activity:'Available',fresh:true,age_seconds:1,display:'green',poll_seconds:10,uptime_seconds:600,led_gpio:13,brightness_percent:100,test_seconds:0,control_token:'test-token'};
 let body={...base,state:'code',user_code:'ABCD-EFGH',expires_in:2};
 const context=vm.createContext({
- document:{getElementById:id=>elements[id],querySelectorAll:()=>buttons},
+  document:{getElementById:id=>elements[id],createElement:()=>({textContent:''}),querySelectorAll:()=>buttons},
  Date:{now:()=>now}, AbortController,confirm:()=>true,
  setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>{},
  fetch:async(url,options)=>{
