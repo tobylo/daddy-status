@@ -11,7 +11,7 @@ jobs:
     container: espressif/idf:v6.1
     strategy:
       matrix:
-        configuration: [default, diagnostics, frame, ota]
+        configuration: [default, diagnostics, frame, ota, encrypted]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,7 +22,15 @@ jobs:
           BUILD_CONFIGURATION: ${{ matrix.configuration }}
         run: |
           . "$IDF_PATH/export.sh"
-          if [ "$BUILD_CONFIGURATION" = ota ]; then
+          if [ "$BUILD_CONFIGURATION" = encrypted ]; then
+            espsecure generate-signing-key --version 1 secure_boot_signing_key.pem
+            idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ota;sdkconfig.encrypted' build
+            for setting in SECURE_FLASH_ENC_ENABLED SECURE_FLASH_ENCRYPTION_MODE_RELEASE NVS_ENCRYPTION NVS_SEC_KEY_PROTECT_USING_FLASH_ENC FRAME_OTA_ENABLE; do
+              grep -qx "CONFIG_${setting}=y" sdkconfig
+            done
+            grep -qx 'CONFIG_PARTITION_TABLE_OFFSET=0x10000' sdkconfig
+            grep -qx 'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.encrypted.csv"' sdkconfig
+          elif [ "$BUILD_CONFIGURATION" = ota ]; then
             espsecure generate-signing-key --version 1 secure_boot_signing_key.pem
             idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.ota' build
           elif [ "$BUILD_CONFIGURATION" = diagnostics ]; then

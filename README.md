@@ -83,9 +83,9 @@ to work around network or clock failures.
 may be compiled into firmware defaults and saved in NVS, so keep configured builds private. Access tokens
 stay in RAM; refresh tokens persist in NVS and survive normal reflashing. The
 application does not log token values or authorization headers. Keep SDK HTTP/TLS
-logging at its normal level when handling live credentials. Flash encryption is
-not enabled by this project; physical flash protection needs separate device
-provisioning.
+logging at its normal level when handling live credentials. The default build leaves flash unencrypted. For encrypted refresh tokens and
+Wi-Fi settings, use the [encrypted storage profile](docs/encrypted-storage.md),
+which requires deliberate USB provisioning and permanent security eFuse changes.
 
 ## What the lights mean
 

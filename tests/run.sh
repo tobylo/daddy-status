@@ -35,3 +35,7 @@ run_test settings tests/test_settings.c main/protocol.c "$CJSON/cJSON.c"
 run_test ota -DCONFIG_FRAME_OTA_ENABLE=1 -DCONFIG_SECURE_SIGNED_ON_UPDATE=1 \
     -DCONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=1 tests/test_ota.c
 run_test ota_disabled tests/test_ota.c
+
+run_test storage_plain -DCONFIG_NVS_ENCRYPTION=0 tests/test_storage.c main/storage.c
+run_test storage_encrypted -DCONFIG_NVS_ENCRYPTION=1 \
+    -DCONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=1 tests/test_storage.c main/storage.c
