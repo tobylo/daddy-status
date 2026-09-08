@@ -11,8 +11,8 @@ profile uses **release mode**, which permanently programs security eFuses on
 first boot and restricts subsequent USB flashing/debugging. Building or merging
 this profile does not provision a device. Do not flash it as an ordinary update.
 
-Use [Espressif's NVS encryption guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/nvs_encryption.html)
-and [flash encryption provisioning guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/security/flash-encryption.html)
+Use [Espressif's NVS encryption guide](https://docs.espressif.com/projects/esp-idf/en/v6.1/esp32/api-reference/storage/nvs_encryption.html)
+and [flash encryption provisioning guide](https://docs.espressif.com/projects/esp-idf/en/v6.1/esp32/security/flash-encryption.html)
 when preparing hardware. This protects stored data against raw flash readout;
 it does not enable hardware Secure Boot or protect a running application from
 compromise. The composed OTA profile verifies application signatures. Local

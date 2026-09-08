@@ -117,6 +117,7 @@ static void preserves_security_failures(void)
         prepare(CONFIG_NVS_ENCRYPTION, errors[i]);
         assert(storage_init() == errors[i]);
         assert(init_calls == 1 && erase_calls == 0);
+        assert(zero_calls == CONFIG_NVS_ENCRYPTION);
     }
 }
 
