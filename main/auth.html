@@ -5,7 +5,7 @@
 <title>Daddy Status · Your frame</title>
 <style>
 :root{font:16px/1.5 system-ui,sans-serif;color:#162532;background:#f2f4f6}body{margin:0;padding:24px}main{max-width:640px;margin:4vh auto}header{display:block}header{margin-bottom:24px}h1{font-size:30px;margin:0}h2{font-size:19px;margin-top:0}.card{background:white;padding:24px;border-radius:16px;margin:16px 0;box-shadow:0 4px 20px #1625320a}.eyebrow{color:#526272;margin:0 0 4px}.status{margin-bottom:0}dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin:0}dt{color:#526272}dd{margin:0;text-align:right;overflow-wrap:anywhere}code{display:block;font-size:30px;letter-spacing:3px;margin:20px 0;font-weight:bold}a,button{display:inline-block;background:#145cbd;color:white;padding:10px 16px;border:0;border-radius:8px;font:inherit;text-decoration:none;cursor:pointer}button{background:#eaf0f7;color:#162532}button:hover{background:#d9e5f4}button:disabled{opacity:.45;cursor:wait}.buttons{display:flex;gap:8px;flex-wrap:wrap}small,.muted{color:#526272}small{display:block;margin-top:16px}[hidden]{display:none}@media(max-width:420px){body{padding:14px}.card{padding:18px}dl{gap:10px}main{margin:2vh auto}}
-label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}.history{margin:0;padding-left:20px}.history li{margin:5px 0;color:#526272}
+label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}.field-error{color:#a51d24;margin:4px 0}input[aria-invalid=true]{border-color:#a51d24}.history{margin:0;padding-left:20px}.history li{margin:5px 0;color:#526272}
 </style>
 <main>
 <header><p class="eyebrow">Your picture frame</p><h1>Daddy Status</h1><p id="status" class="status" role="status" aria-live="polite">Connecting to your frame…</p></header>
@@ -38,17 +38,28 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <section class="card"><details><summary>Settings and recovery</summary>
 <p class="muted">Saving restarts the frame. If the new Wi-Fi cannot connect within three minutes, the previous settings return. Keep this page’s address or reconnect to the setup network if needed.</p>
 <form id="settings-form">
-<label for="setting-ssid">Wi-Fi name (2.4 GHz)</label><input id="setting-ssid" maxlength="32" required>
-<label for="setting-password">New Wi-Fi password</label><input id="setting-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
-<label><input id="setting-open" type="checkbox"> Use an open Wi-Fi network (erase saved password)</label>
-<label for="setting-tenant">Microsoft tenant ID</label><input id="setting-tenant" maxlength="36" required>
-<label for="setting-client">Microsoft app client ID</label><input id="setting-client" maxlength="36" required>
-<label for="setting-ntp">Time server hostname or IPv4 address</label><input id="setting-ntp" maxlength="253" required>
-<label for="setting-poll_seconds">Poll interval (2–300 seconds)</label><input id="setting-poll_seconds" type="number" min="2" max="300" required>
-<label for="setting-stale_seconds">Stale after (30–3600 seconds; longer than poll interval)</label><input id="setting-stale_seconds" type="number" min="30" max="3600" required>
-<label for="setting-brightness">Brightness (1–100%)</label><input id="setting-brightness" type="number" min="1" max="100" required>
+<label for="setting-ssid">Wi-Fi name (2.4 GHz)</label><input id="setting-ssid" aria-describedby="error-ssid" maxlength="32" required>
+<p id="error-ssid" class="field-error" hidden></p>
+<label for="setting-password">New Wi-Fi password</label><input id="setting-password" aria-describedby="error-password" type="password" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep the saved password">
+<p id="error-password" class="field-error" hidden></p>
+<label><input id="setting-open" aria-describedby="error-open" type="checkbox"> Use an open Wi-Fi network (erase saved password)</label>
+<p id="error-open" class="field-error" hidden></p>
+<label for="setting-tenant">Microsoft tenant ID</label><input id="setting-tenant" aria-describedby="error-tenant" maxlength="36" required>
+<p id="error-tenant" class="field-error" hidden></p>
+<label for="setting-client">Microsoft app client ID</label><input id="setting-client" aria-describedby="error-client" maxlength="36" required>
+<p id="error-client" class="field-error" hidden></p>
+<label for="setting-ntp">Time server hostname or IPv4 address</label><input id="setting-ntp" aria-describedby="error-ntp" maxlength="253" required>
+<p id="error-ntp" class="field-error" hidden></p>
+<label for="setting-poll_seconds">Poll interval (2–300 seconds)</label><input id="setting-poll_seconds" aria-describedby="error-poll_seconds" type="number" min="2" max="300" required>
+<p id="error-poll_seconds" class="field-error" hidden></p>
+<label for="setting-stale_seconds">Stale after (30–3600 seconds; longer than poll interval)</label><input id="setting-stale_seconds" aria-describedby="error-stale_seconds" type="number" min="30" max="3600" required>
+<p id="error-stale_seconds" class="field-error" hidden></p>
+<label for="setting-brightness">Brightness (1–100%)</label><input id="setting-brightness" aria-describedby="error-brightness" type="number" min="1" max="100" required>
+<p id="error-brightness" class="field-error" hidden></p>
 <button id="save-settings" type="submit" disabled>Save and restart</button>
 </form>
+<p id="trial-status" role="status" aria-live="polite" hidden></p>
+<progress id="trial-progress" max="180" value="0" aria-label="Wi-Fi trial elapsed time" hidden></progress>
 <p>Changing tenant or app IDs requires Microsoft sign-in again. Reset sign-in to use another account; frame settings are kept.</p>
 <button id="reset-auth" type="button" disabled>Reset Microsoft sign-in</button>
 <p id="settings-status" role="status" aria-live="polite">Loading settings…</p>
@@ -60,7 +71,7 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 const el=id=>document.getElementById(id);
 const statusText=el('status'),login=el('login'),code=el('code'),expiry=el('expiry');
 const buttons=Array.from(document.querySelectorAll('[data-mode]'));
-let deadline=0,controlToken='',testBusy=false,testDeadline=0,settingsLoaded=false,settingsBusy=false,restarting=false;
+let deadline=0,controlToken='',testBusy=false,testDeadline=0,settingsLoaded=false,settingsBusy=false,restarting=false,settingsToken='',restartToken='',trialActive=false,trialDeadline=0,settingsAvailable=false;
 const settingFields=['ssid','tenant','client','ntp','poll_seconds','stale_seconds','brightness'];
 const errors={network:'Cannot reach Microsoft. Retrying automatically.',clock:'Waiting for clock synchronization before contacting Microsoft.',auth:'Microsoft sign-in needs attention. Retrying automatically.',auth_config:'Check the Microsoft app registration and tenant settings.',auth_denied:'Microsoft sign-in was declined. Waiting for another attempt.',auth_expired:'The sign-in code expired. Waiting for another attempt.',storage:'Cannot save or read the device’s login. Check device storage.',permission:'Signed in, but Microsoft denied access to presence. Check Presence.Read consent.',throttled:'Microsoft asked the frame to wait. Retrying after the required delay.',response:'Microsoft returned an unexpected response. Retrying automatically.'};
 const displays={connecting:'Blinking blue',authenticating:'Blinking yellow',unknown:'Blinking blue',green:'Green',yellow:'One yellow LED',red:'Blinking red',rainbow:'Rainbow',configuration:'Magenta'};
@@ -68,7 +79,7 @@ const wifiEvents={disconnected:'Disconnected',retry_started:'Retry started',retr
 function clearCode(){login.hidden=true;code.textContent='';deadline=0;}
 function enableTests(){
  buttons.forEach(button=>button.disabled=!controlToken||testBusy||restarting);
- el('save-settings').disabled=el('reset-auth').disabled=!controlToken||!settingsLoaded||settingsBusy||restarting;
+ el('save-settings').disabled=el('reset-auth').disabled=!controlToken||!settingsLoaded||!settingsAvailable||settingsBusy||restarting||trialActive;
 }
 async function update(){
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
@@ -107,7 +118,7 @@ async function update(){
       code.textContent=data.user_code;deadline=Date.now()+data.expires_in*1000;login.hidden=false;
       statusText.textContent='Your frame needs you to sign in.';
     }
-    if(!settingsLoaded)await loadSettings();
+    await loadSettings();
     tick();
   }catch(error){
     clearCode();controlToken='';testDeadline=0;
@@ -136,34 +147,80 @@ async function loadSettings(){
   const response=await fetch('/api/settings',{cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('Unavailable');
   const data=await response.json();
-  settingFields.forEach(name=>el('setting-'+name).value=data[name]);
-  el('setting-password').value='';el('setting-open').checked=false;
-  settingsLoaded=true;
-  el('settings-status').textContent=data.trial?'Trying new Wi-Fi settings; wait for connection before saving again.':'Settings loaded. Passwords are never displayed.';
- }catch(error){el('settings-status').textContent='Cannot load settings. Retrying…';}
+  const rebooted=settingsToken&&data.control_token!==settingsToken;
+  if(!settingsLoaded||rebooted){
+   settingFields.forEach(name=>el('setting-'+name).value=data[name]);
+   el('setting-password').value='';el('setting-open').checked=false;
+   clearFieldErrors();
+   el('settings-status').textContent=rebooted?'Frame reconnected. Current settings loaded.':'Settings loaded. Passwords are never displayed.';
+  }
+  settingsToken=data.control_token;
+  controlToken=data.control_token;
+  settingsLoaded=true;settingsAvailable=true;
+  if(restarting&&data.control_token!==restartToken)restarting=false;
+  if(data.restart_pending){restarting=true;restartToken=data.control_token;}
+  if(trialActive&&!data.trial&&!data.restart_pending&&!rebooted)el('settings-status').textContent='Wi-Fi trial completed. Settings confirmed.';
+  trialActive=Boolean(data.trial);
+  trialDeadline=trialActive?Date.now()+data.trial_seconds_remaining*1000:0;
+  if(restarting)showRestart();
+  tickTrial();
+ }catch(error){settingsAvailable=false;if(!restarting)el('settings-status').textContent='Cannot load settings. Retrying…';}
  clearTimeout(timeout);
 }
+const fieldMessages={ssid:'Enter a Wi-Fi name of 1–32 bytes.',password:'Use 8–63 printable ASCII characters or 64 hexadecimal digits. Leave blank to keep the saved password.',open:'Choose whether to use an open network.',tenant:'Enter a valid tenant GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',client:'Enter a valid app client GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',ntp:'Enter a hostname or IPv4 address using letters, digits, dots and hyphens (up to 253 bytes).',poll_seconds:'Enter a whole number from 2 to 300.',stale_seconds:'Enter a whole number from 30 to 3600, greater than the poll interval.',brightness:'Enter a whole number from 1 to 100.'};
+function clearFieldErrors(){
+ Object.keys(fieldMessages).forEach(name=>{el('error-'+name).hidden=true;el('setting-'+name).removeAttribute('aria-invalid');});
+}
+function showRestart(){
+ el('settings-status').textContent='Restart pending. Waiting for the frame to reconnect automatically. If its address changes, reconnect to its Wi-Fi and open the new address, or use setup Wi-Fi at http://192.168.4.1/.';
+}
+function tickTrial(){
+ el('trial-status').hidden=el('trial-progress').hidden=!trialActive;
+ if(!trialActive)return;
+ const seconds=Math.max(0,Math.ceil((trialDeadline-Date.now())/1000));
+ el('trial-progress').value=180-seconds;
+ el('trial-status').textContent='Trying new Wi-Fi settings: '+seconds+' seconds remaining. Waiting for connection and storage confirmation; previous settings return if the trial fails.';
+}
 async function changeSettings(action){
- if(!controlToken||!settingsLoaded||settingsBusy||restarting)return;
+ if(!controlToken||!settingsLoaded||!settingsAvailable||settingsBusy||restarting||trialActive)return;
  if(action==='reset_auth'&&!confirm('Clear Microsoft sign-in and restart the frame?'))return;
  const payload={action};
  if(action==='save'){
   settingFields.forEach(name=>payload[name]=['poll_seconds','stale_seconds','brightness'].includes(name)?Number(el('setting-'+name).value):el('setting-'+name).value);
   payload.password=el('setting-password').value;payload.open_network=el('setting-open').checked;
  }
+ clearFieldErrors();
  settingsBusy=true;enableTests();
+ const submittedToken=controlToken;
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
  try{
   const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Frame-Token':controlToken},body:JSON.stringify(payload),signal:controller.signal});
-  if(!response.ok)throw Error('Rejected');
-  restarting=true;el('setting-password').value='';
-  el('settings-status').textContent='Saved. The frame is restarting. Reopen this page after it reconnects; its address may change with the Wi-Fi network.';
- }catch(error){el('settings-status').textContent='Change not confirmed. Check field values, connection and whether a restart or Wi-Fi trial is still running. Reload before retrying.';}
+  if(!response.ok){
+   const data=await response.json().catch(()=>({}));
+   if(data.error==='validation'&&Object.hasOwn(fieldMessages,data.field)){
+    const input=el('setting-'+data.field),message=el('error-'+data.field);
+    message.textContent=fieldMessages[data.field];message.hidden=false;
+    input.setAttribute('aria-invalid','true');input.focus();
+    el('settings-status').textContent='Settings were not saved. Correct the highlighted field and try again.';
+   }else if(data.error==='storage'){
+    el('settings-status').textContent='Device storage failed. The change was not confirmed and no restart was scheduled. Try again.';
+   }else if(data.error==='restart_or_trial_pending'){
+    el('settings-status').textContent='A restart or Wi-Fi trial is already in progress. Waiting for updated status…';
+    await loadSettings();
+   }else if(response.status===403){
+    el('settings-status').textContent='The frame session changed. Refreshing its settings; try again once connected.';
+    await loadSettings();
+   }else{el('settings-status').textContent='The frame rejected the request. Try again once connected.';}
+  }else{
+   restarting=true;restartToken=submittedToken;el('setting-password').value='';showRestart();
+  }
+ }catch(error){el('settings-status').textContent='Change not confirmed: connection lost. Reconnecting automatically to check the frame. Your entered settings are kept until a reboot is detected.';}
  clearTimeout(timeout);settingsBusy=false;enableTests();
 }
 el('settings-form').addEventListener('submit',event=>{event.preventDefault();changeSettings('save');});
 el('reset-auth').addEventListener('click',()=>changeSettings('reset_auth'));
 function tick(){
+  tickTrial();
   if(!deadline)return;
   const seconds=Math.max(0,Math.ceil((deadline-Date.now())/1000));
   if(!seconds){clearCode();statusText.textContent='Code expired. Waiting for a new code…';return;}

@@ -19,6 +19,7 @@ static char output[2048];
 static const char *request_token, *request_body;
 static size_t body_offset;
 static int error_status;
+static esp_err_t settings_result;
 void esp_fill_random(void *buffer, size_t length)
 {
     memset(buffer, 42, length);
@@ -75,6 +76,11 @@ esp_err_t httpd_resp_set_hdr(httpd_req_t *req, const char *name, const char *val
 {
     if (!strcmp(name, "Cache-Control"))
         no_store = !strcmp(value, "no-store");
+    return ESP_OK;
+}
+esp_err_t httpd_resp_set_status(httpd_req_t *req, const char *status)
+{
+    error_status = atoi(status);
     return ESP_OK;
 }
 esp_err_t httpd_resp_set_type(httpd_req_t *req, const char *type)
@@ -194,9 +200,21 @@ int main(void)
     request_body = "{\"action\":\"save\"}";
     req.content_len = strlen(request_body);
     body_offset = 0;
-    assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
+    assert(settings_post_handler(&req) == ESP_OK && error_status == 400);
+    assert(strstr(output, "validation") && strstr(output, "ssid"));
     req.content_len = 1537;
     assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
+    request_body = "{\"action\":\"reset_auth\"}";
+    req.content_len = strlen(request_body);
+    body_offset = 0;
+    settings_result = ESP_ERR_INVALID_STATE;
+    assert(settings_post_handler(&req) == ESP_OK && error_status == 409);
+    assert(strstr(output, "restart_or_trial_pending"));
+    body_offset = 0;
+    settings_result = ESP_FAIL;
+    assert(settings_post_handler(&req) == ESP_OK && error_status == 500);
+    assert(strstr(output, "storage"));
+    assert(settings_get_handler(NULL) == ESP_OK && strstr(output, control_token));
     puts("web routes, startup cleanup, code ownership, expiry, and JSON tests passed");
 }
 
@@ -205,9 +223,9 @@ cJSON *settings_json(void)
 {
     return cJSON_CreateObject();
 }
-bool settings_parse(const cJSON *json, frame_settings_t *value)
+const char *settings_parse_error(const cJSON *json, frame_settings_t *value)
 {
-    return false;
+    return "ssid";
 }
 esp_err_t settings_save(const frame_settings_t *value)
 {
@@ -215,5 +233,5 @@ esp_err_t settings_save(const frame_settings_t *value)
 }
 esp_err_t settings_reset_auth(void)
 {
-    return ESP_OK;
+    return settings_result;
 }

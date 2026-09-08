@@ -207,3 +207,10 @@ Recovery-page access while connected to the setup AP, invalid-setting rejection
 on hardware, a power cycle during a candidate trial, tenant/client identity
 changes, AP-mode heap/stack measurements and a 24-hour soak were not separately
 confirmed. Their host coverage does not substitute for physical validation.
+
+Settings feedback regression coverage also checks field-specific validation,
+HTTP 409 versus storage failures, the trial countdown, same-boot edit retention,
+lost save responses, and automatic form/control recovery after reboot or rollback.
+On hardware, keep the page open through save/reset and a failed Wi-Fi trial;
+verify that controls unlock after reconnection and that a changed IP is handled
+using the recovery guidance shown on the page.

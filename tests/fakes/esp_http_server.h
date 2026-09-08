@@ -28,6 +28,7 @@ esp_err_t httpd_start(httpd_handle_t *, const httpd_config_t *);
 esp_err_t httpd_stop(httpd_handle_t);
 esp_err_t httpd_register_uri_handler(httpd_handle_t, const httpd_uri_t *);
 esp_err_t httpd_resp_set_hdr(httpd_req_t *, const char *, const char *);
+esp_err_t httpd_resp_set_status(httpd_req_t *, const char *);
 esp_err_t httpd_resp_set_type(httpd_req_t *, const char *);
 esp_err_t httpd_resp_send(httpd_req_t *, const char *, int);
 esp_err_t httpd_resp_send_err(httpd_req_t *, int, const char *);

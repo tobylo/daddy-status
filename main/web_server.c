@@ -295,7 +295,25 @@ static esp_err_t led_test_post(httpd_req_t *req)
 
 static esp_err_t settings_get_handler(httpd_req_t *req)
 {
-    return send_json(req, settings_json());
+    cJSON *json = settings_json();
+    if (json && !cJSON_AddStringToObject(json, "control_token", control_token)) {
+        cJSON_Delete(json);
+        json = NULL;
+    }
+    return send_json(req, json);
+}
+
+static esp_err_t settings_error(httpd_req_t *req, const char *status, const char *error,
+                                const char *field)
+{
+    httpd_resp_set_status(req, status);
+    cJSON *json = cJSON_CreateObject();
+    if (!json || !cJSON_AddStringToObject(json, "error", error) ||
+        (field && !cJSON_AddStringToObject(json, "field", field))) {
+        cJSON_Delete(json);
+        json = NULL;
+    }
+    return send_json(req, json);
 }
 
 static esp_err_t settings_post_handler(httpd_req_t *req)
@@ -321,17 +339,21 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     frame_settings_t value;
     const char *action = json_string(json, "action");
     bool reset = action && !strcmp(action, "reset_auth");
-    bool valid = reset || (action && !strcmp(action, "save") && settings_parse(json, &value));
+    const char *field = reset                               ? NULL
+                        : action && !strcmp(action, "save") ? settings_parse_error(json, &value)
+                                                            : "request";
     cJSON_Delete(json);
     memset(body, 0, sizeof(body));
-    if (!valid)
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Check settings fields and ranges");
+    if (field) {
+        memset(&value, 0, sizeof(value));
+        return settings_error(req, "400 Bad Request", "validation", field);
+    }
     esp_err_t err = reset ? settings_reset_auth() : settings_save(&value);
     memset(&value, 0, sizeof(value));
+    if (err == ESP_ERR_INVALID_STATE)
+        return settings_error(req, "409 Conflict", "restart_or_trial_pending", NULL);
     if (err != ESP_OK)
-        return httpd_resp_send_err(
-            req, HTTPD_500_INTERNAL_SERVER_ERROR,
-            "Settings not confirmed: storage failure or restart/trial in progress");
+        return settings_error(req, "500 Internal Server Error", "storage", NULL);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
 }

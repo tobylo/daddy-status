@@ -246,7 +246,14 @@ if the previous network is also unavailable. An empty/invalid setup password
 keeps the AP disabled, leaving USB recovery available. Keep the password with
 your private device configuration; it is never exposed through the dashboard.
 
-`GET /api/settings` returns non-secret settings. `POST /api/settings` accepts
+`GET /api/settings` returns non-secret settings, the per-boot control token,
+`restart_pending`, `trial`, and `trial_seconds_remaining`. The page polls these
+values, shows Wi-Fi trial progress, and reloads settings after a reboot while
+preserving unsaved edits during ordinary polling. If Wi-Fi changes the device
+address, open its new address or reconnect through setup Wi-Fi. Validation
+failures identify the first invalid field (`400`, `error=validation`, `field`);
+a pending restart/trial returns `409` (`restart_or_trial_pending`), and storage
+failures return `500` (`storage`). `POST /api/settings` accepts
 `action=save` with settings or `action=reset_auth`, requiring the same per-boot
 `X-Frame-Token` header as LED controls. Anyone on the trusted LAN who can load
 the page can change settings or reset sign-in. The local HTTP connection is not
