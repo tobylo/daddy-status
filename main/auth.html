@@ -5,7 +5,7 @@
 <title>Daddy Status · Your frame</title>
 <style>
 :root{font:16px/1.5 system-ui,sans-serif;color:#162532;background:#f2f4f6}body{margin:0;padding:24px}main{max-width:640px;margin:4vh auto}header{display:block}header{margin-bottom:24px}h1{font-size:30px;margin:0}h2{font-size:19px;margin-top:0}.card{background:white;padding:24px;border-radius:16px;margin:16px 0;box-shadow:0 4px 20px #1625320a}.eyebrow{color:#526272;margin:0 0 4px}.status{margin-bottom:0}dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin:0}dt{color:#526272}dd{margin:0;text-align:right;overflow-wrap:anywhere}code{display:block;font-size:30px;letter-spacing:3px;margin:20px 0;font-weight:bold}a,button{display:inline-block;background:#145cbd;color:white;padding:10px 16px;border:0;border-radius:8px;font:inherit;text-decoration:none;cursor:pointer}button{background:#eaf0f7;color:#162532}button:hover{background:#d9e5f4}button:disabled{opacity:.45;cursor:wait}.buttons{display:flex;gap:8px;flex-wrap:wrap}small,.muted{color:#526272}small{display:block;margin-top:16px}[hidden]{display:none}@media(max-width:420px){body{padding:14px}.card{padding:18px}dl{gap:10px}main{margin:2vh auto}}
-label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}
+label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}.history{margin:0;padding-left:20px}.history li{margin:5px 0;color:#526272}
 </style>
 <main>
 <header><p class="eyebrow">Your picture frame</p><h1>Daddy Status</h1><p id="status" class="status" role="status" aria-live="polite">Connecting to your frame…</p></header>
@@ -17,6 +17,13 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <dt>Wi-Fi</dt><dd id="connection">—</dd>
 <dt>Microsoft account</dt><dd id="account">—</dd>
 </dl></section>
+<section class="card"><h2>Wi-Fi recovery</h2><dl>
+<dt>Signal strength</dt><dd id="signal">—</dd>
+<dt>Last disconnect</dt><dd id="disconnect">—</dd>
+<dt>Retries</dt><dd id="retries">—</dd>
+<dt>Next retry</dt><dd id="next-retry">—</dd>
+<dt>Recovery network</dt><dd id="recovery-ap">—</dd>
+</dl><h3>Recent events</h3><ol id="wifi-history" class="history"><li>—</li></ol></section>
 <section id="login" class="card" hidden><h2>Sign in to Microsoft</h2>
 <p>Open Microsoft sign-in and enter this code:</p><code id="code"></code>
 <a href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">Sign in with Microsoft ↗</a><p id="expiry"></p>
@@ -57,6 +64,7 @@ let deadline=0,controlToken='',testBusy=false,testDeadline=0,settingsLoaded=fals
 const settingFields=['ssid','tenant','client','ntp','poll_seconds','stale_seconds','brightness'];
 const errors={network:'Cannot reach Microsoft. Retrying automatically.',clock:'Waiting for clock synchronization before contacting Microsoft.',auth:'Microsoft sign-in needs attention. Retrying automatically.',auth_config:'Check the Microsoft app registration and tenant settings.',auth_denied:'Microsoft sign-in was declined. Waiting for another attempt.',auth_expired:'The sign-in code expired. Waiting for another attempt.',storage:'Cannot save or read the device’s login. Check device storage.',permission:'Signed in, but Microsoft denied access to presence. Check Presence.Read consent.',throttled:'Microsoft asked the frame to wait. Retrying after the required delay.',response:'Microsoft returned an unexpected response. Retrying automatically.'};
 const displays={connecting:'Blinking blue',authenticating:'Blinking yellow',unknown:'Blinking blue',green:'Green',yellow:'One yellow LED',red:'Blinking red',rainbow:'Rainbow',configuration:'Magenta'};
+const wifiEvents={disconnected:'Disconnected',retry_started:'Retry started',retry_waiting:'Waiting before retry',timeout:'Connection timed out',connected:'Connected',recovery_ap_enabled:'Recovery network enabled',recovery_ap_disabled:'Recovery network disabled'};
 function clearCode(){login.hidden=true;code.textContent='';deadline=0;}
 function enableTests(){
  buttons.forEach(button=>button.disabled=!controlToken||testBusy||restarting);
@@ -75,6 +83,18 @@ async function update(){
     el('age').textContent=data.age_seconds>=0?data.age_seconds+' seconds ago':'Not received yet';
     el('display').textContent=displays[data.display]||'Unknown';
     el('connection').textContent=data.connected?'Connected':'Disconnected';
+    el('signal').textContent=data.signal_known?data.signal_rssi+' dBm':'Unknown';
+    el('disconnect').textContent=data.last_disconnect_reason>=0?data.last_disconnect_reason_name+' ('+data.last_disconnect_reason+')':'None recorded';
+    el('retries').textContent=data.retry_count;
+    el('next-retry').textContent=data.next_retry_seconds>0?'In '+data.next_retry_seconds+' seconds':'Not scheduled';
+    el('recovery-ap').textContent=data.recovery_ap?'Enabled':'Disabled';
+    const history=el('wifi-history');history.textContent='';
+    (data.wifi_history||[]).forEach(event=>{
+      const item=document.createElement('li');item.textContent=(wifiEvents[event.event]||'Wi-Fi event')+' · '+event.age_seconds+' seconds ago';
+      if(event.event==='disconnected')item.textContent+=' · '+event.reason_name+' ('+event.reason+') · '+event.rssi+' dBm';
+      history.appendChild(item);
+    });
+    if(!history.children.length)history.textContent='No Wi-Fi events recorded';
     el('account').textContent=data.state==='signed_in'?'Signed in':data.state==='code'?'Sign-in required':'Waiting';
     el('poll').textContent=data.poll_seconds+' seconds';
     el('gpio').textContent='GPIO '+data.led_gpio;
@@ -91,7 +111,8 @@ async function update(){
     tick();
   }catch(error){
     clearCode();controlToken='';testDeadline=0;
-    ['activity','freshness','age','display','account'].forEach(id=>el(id).textContent='Unavailable');
+    ['activity','freshness','age','display','account','signal','disconnect','retries','next-retry','recovery-ap'].forEach(id=>el(id).textContent='Unavailable');
+    el('wifi-history').textContent='Unavailable';
     el('connection').textContent='Cannot reach frame';
     el('test-status').textContent='Cannot reach frame. Any active test expires automatically.';
     statusText.textContent='Cannot reach the frame. Check that you are on the same Wi-Fi. Reconnecting…';

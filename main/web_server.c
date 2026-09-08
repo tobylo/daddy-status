@@ -8,6 +8,7 @@
 #include "protocol.h"
 #include "sdkconfig.h"
 #include "settings.h"
+#include "wifi.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,6 +123,40 @@ static const char *label(const char *const *names, unsigned count, unsigned valu
 }
 #define LABEL(names, value) label(names, sizeof(names) / sizeof(names[0]), value)
 
+static const char *wifi_event_name(wifi_diag_event_type_t type)
+{
+    static const char *const names[] = {
+        "disconnected", "retry_started",       "retry_waiting",       "timeout",
+        "connected",    "recovery_ap_enabled", "recovery_ap_disabled"};
+    return LABEL(names, type);
+}
+
+static const char *wifi_reason_name(uint8_t reason)
+{
+    switch (reason) {
+    case 2:
+        return "authentication expired";
+    case 4:
+        return "association expired";
+    case 15:
+        return "4-way handshake timeout";
+    case 200:
+        return "beacon timeout";
+    case 201:
+        return "access point not found";
+    case 202:
+        return "authentication failed";
+    case 203:
+        return "association failed";
+    case 204:
+        return "handshake timeout";
+    case 205:
+        return "connection failed";
+    default:
+        return "unknown reason";
+    }
+}
+
 static esp_err_t dashboard_get(httpd_req_t *req)
 {
     app_status_t current;
@@ -135,6 +170,8 @@ static esp_err_t dashboard_get(httpd_req_t *req)
     until = test_deadline;
     portEXIT_CRITICAL(&lock);
     int64_t now = esp_timer_get_time();
+    wifi_diagnostics_t wifi;
+    wifi_diagnostics_snapshot(&wifi);
     int64_t age =
         current.has_presence && now >= current.updated_at_us ? now - current.updated_at_us : -1;
     const char *const services[] = {"connecting", "clock", "authenticating", "polling",
@@ -159,11 +196,54 @@ static esp_err_t dashboard_get(httpd_req_t *req)
         !cJSON_AddNumberToObject(json, "uptime_seconds", now / 1000000) ||
         !cJSON_AddNumberToObject(json, "led_gpio", CONFIG_LED_DATA_GPIO) ||
         !cJSON_AddNumberToObject(json, "brightness_percent", settings_get()->brightness) ||
+        !cJSON_AddNumberToObject(json, "signal_rssi", wifi.has_signal ? wifi.rssi : 0) ||
+        !cJSON_AddBoolToObject(json, "signal_known", wifi.has_signal) ||
+        !cJSON_AddNumberToObject(json, "last_disconnect_reason",
+                                 wifi.has_disconnect ? wifi.last_disconnect_reason : -1) ||
+        !cJSON_AddStringToObject(json, "last_disconnect_reason_name",
+                                 wifi.has_disconnect ? wifi_reason_name(wifi.last_disconnect_reason)
+                                                     : "none recorded") ||
+        !cJSON_AddNumberToObject(json, "retry_count", wifi.retry_count) ||
+        !cJSON_AddNumberToObject(
+            json, "next_retry_seconds",
+            wifi.next_retry_at_us > now ? (wifi.next_retry_at_us - now + 999999) / 1000000 : 0) ||
+        !cJSON_AddBoolToObject(json, "recovery_ap", wifi.recovery_ap) ||
         !cJSON_AddNumberToObject(json, "test_seconds",
                                  until > now ? (until - now + 999999) / 1000000 : 0) ||
         !cJSON_AddStringToObject(json, "control_token", control_token)) {
         cJSON_Delete(json);
         json = NULL;
+    }
+    if (json) {
+        cJSON *history = cJSON_CreateArray();
+        unsigned count =
+            wifi.event_count < WIFI_EVENT_HISTORY_SIZE ? wifi.event_count : WIFI_EVENT_HISTORY_SIZE;
+        if (!history)
+            cJSON_Delete(json), json = NULL;
+        for (unsigned i = 0; json && i < count; ++i) {
+            unsigned index = (wifi.event_count - count + i) % WIFI_EVENT_HISTORY_SIZE;
+            const wifi_diag_event_t *event = &wifi.events[index];
+            int64_t age = now >= event->at_us ? now - event->at_us : 0;
+            cJSON *item = cJSON_CreateObject();
+            if (!item || !cJSON_AddStringToObject(item, "event", wifi_event_name(event->type)) ||
+                !cJSON_AddNumberToObject(item, "age_seconds", age / 1000000) ||
+                !cJSON_AddNumberToObject(item, "reason", event->reason) ||
+                !cJSON_AddStringToObject(item, "reason_name", wifi_reason_name(event->reason)) ||
+                !cJSON_AddNumberToObject(item, "rssi", event->rssi) ||
+                !cJSON_AddNumberToObject(item, "retry_count", event->retry_count)) {
+                cJSON_Delete(item);
+                cJSON_Delete(history);
+                cJSON_Delete(json);
+                json = NULL;
+                break;
+            }
+            cJSON_AddItemToArray(history, item);
+        }
+        if (json && !cJSON_AddItemToObject(json, "wifi_history", history)) {
+            cJSON_Delete(history);
+            cJSON_Delete(json);
+            json = NULL;
+        }
     }
     return send_json(req, json);
 }

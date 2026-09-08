@@ -23,6 +23,9 @@ typedef struct {
     uint8_t reason;
     int8_t rssi;
 } wifi_event_sta_disconnected_t;
+typedef struct {
+    int8_t rssi;
+} wifi_ap_record_t;
 #define WIFI_STORAGE_RAM 0
 #define WIFI_MODE_STA 0
 #define WIFI_MODE_APSTA 1
@@ -39,5 +42,6 @@ esp_err_t esp_wifi_start(void);
 esp_err_t esp_wifi_connect(void);
 esp_err_t esp_wifi_disconnect(void);
 esp_err_t esp_wifi_set_ps(int);
+esp_err_t esp_wifi_sta_get_ap_info(wifi_ap_record_t *);
 
 esp_err_t esp_wifi_stop(void);
