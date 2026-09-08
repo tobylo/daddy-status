@@ -98,3 +98,15 @@ firmware binary and signing key as part of release records.
 See the [ESP-IDF OTA guide](https://docs.espressif.com/projects/esp-idf/en/v6.1/esp32/api-reference/system/ota.html)
 and [signed app verification](https://docs.espressif.com/projects/esp-idf/en/v6.1/esp32/security/secure-boot-v1.html)
 for the SDK signature and boot-state behavior.
+
+## Encrypted devices
+
+The [encrypted storage profile](encrypted-storage.md) combines signed OTA with
+NVS and flash encryption. Its first installation requires USB provisioning;
+an application-only OTA upload cannot install its partition table or bootloader.
+Keep using that profile and the same signing key for later OTA updates. A build
+without NVS encryption refuses to initialize storage on an encrypted device,
+so it cannot erase encrypted credentials through the normal NVS recovery path.
+Such an incompatible update fails boot confirmation and rolls back.
+Release-mode flash encryption restricts USB recovery: the generic USB reflash
+advice above does not apply to devices provisioned with that profile.

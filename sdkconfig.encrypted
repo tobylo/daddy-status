@@ -1,0 +1,8 @@
+# Deliberate USB provisioning only: first boot permanently programs security eFuses.
+# Compose with sdkconfig.ota to retain signed wireless updates in release mode.
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+CONFIG_NVS_ENCRYPTION=y
+CONFIG_NVS_SEC_KEY_PROTECT_USING_FLASH_ENC=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.encrypted.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x10000

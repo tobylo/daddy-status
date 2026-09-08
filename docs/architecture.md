@@ -128,3 +128,9 @@ repeated station restarts disrupting provisioning. The main task has a 6 KiB sta
 stack and limits settings bodies to 1536 bytes. Recovery uses a private compiled
 password, never an open AP; the trusted-LAN request-token model also applies to
 settings and sign-in reset.
+
+Storage initialization runs before settings and workers. The optional encrypted
+profile uses IDF-managed NVS encryption keys protected by release-mode flash
+encryption. `storage_init` rejects firmware/device encryption mismatches and
+never automatically erases encrypted NVS after an initialization failure. See
+[encrypted storage](encrypted-storage.md) for provisioning and recovery.

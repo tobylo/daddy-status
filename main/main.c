@@ -8,28 +8,17 @@
 #include "freertos/task.h"
 #include "graph_client.h"
 #include "ledcontrol.h"
-#include "nvs_flash.h"
 #include "protocol.h"
 #include "sdkconfig.h"
 #include "settings.h"
+#include "storage.h"
 #include "task_time.h"
 #include "web_server.h"
 #include "wifi.h"
 
-static void nvs_init(void)
-{
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_LOGW("main", "NVS requires reinitialization; saved authorization will be erased");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
-}
-
 void app_main(void)
 {
-    nvs_init();
+    ESP_ERROR_CHECK(storage_init());
     ESP_ERROR_CHECK(settings_init());
     ESP_ERROR_CHECK(leds_init());
     QueueHandle_t queue = xQueueCreate(1, sizeof(app_status_t));

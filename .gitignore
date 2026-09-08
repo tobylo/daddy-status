@@ -25,3 +25,7 @@ build-frame/
 *.pem
 sdkconfig.ota.local*
 build-ota/
+
+# Private encrypted-device configuration and artifacts
+sdkconfig.encrypted.local*
+build-encrypted/
