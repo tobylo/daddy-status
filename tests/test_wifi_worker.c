@@ -49,14 +49,24 @@ static void got_ip(void)
     in_flight = false;
 }
 
-static void associated_and_connected(void)
+static void expect_association(unsigned expected_attempts)
 {
-    assert(attempts == 2 || attempts == 6);
+    assert(attempts == expected_attempts);
     assert(in_flight);
     wifi_event_sta_connected_t associated = {.channel = 6};
     event_handler(NULL, WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &associated);
     assert(!wifi_is_connected() && in_flight);
     got_ip();
+}
+
+static void first_association(void)
+{
+    expect_association(2);
+}
+
+static void final_association(void)
+{
+    expect_association(6);
 }
 
 static void finish_worker(void)
@@ -100,13 +110,13 @@ typedef struct {
 
 #define CONNECTION_RESULT (CONNECTED_BIT | DISCONNECTED_BIT)
 static const wait_step_t retry_waits[] = {
-    {CONNECTION_RESULT, 1, 0, associated_and_connected, NULL},
+    {CONNECTION_RESULT, 1, 0, first_association, NULL},
     {DISCONNECTED_BIT, 1, 0, retry_disconnected, NULL},
     {CONNECTION_RESULT, 30, 0, NULL, NULL}, /* No association/DHCP response. */
     {CONNECTION_RESULT, 30, 0, NULL, NULL},
     {DISCONNECTED_BIT, 5, 0, NULL, NULL}, /* Missing cancellation acknowledgement. */
     {CONNECTION_RESULT, 1, 0, disconnected, NULL},
-    {CONNECTION_RESULT, 1, 0, associated_and_connected, NULL},
+    {CONNECTION_RESULT, 1, 0, final_association, NULL},
     {DISCONNECTED_BIT, 1, 0, retries_finished, NULL},
 };
 static const wait_step_t recovery_waits[] = {
