@@ -42,32 +42,52 @@ void settings_defaults(frame_settings_t *s)
     }
 }
 
-bool settings_valid(const frame_settings_t *s, bool complete)
+static const char *invalid_field(const frame_settings_t *s, bool complete)
 {
-    if (!s || !memchr(s->ssid, 0, sizeof(s->ssid)) ||
-        !memchr(s->password, 0, sizeof(s->password)) || !memchr(s->tenant, 0, sizeof(s->tenant)) ||
-        !memchr(s->client, 0, sizeof(s->client)) || !memchr(s->ntp, 0, sizeof(s->ntp)))
-        return false;
+    if (!s)
+        return "request";
+#define TERMINATED(field)                                                                          \
+    if (!memchr(s->field, 0, sizeof(s->field)))                                                    \
+    return #field
+    TERMINATED(ssid);
+    TERMINATED(password);
+    TERMINATED(tenant);
+    TERMINATED(client);
+    TERMINATED(ntp);
+#undef TERMINATED
     size_t n = strlen(s->password);
     if (n && (n < 8 || n > 64))
-        return false;
+        return "password";
     if (n && n < 64)
         for (size_t i = 0; i < n; ++i)
             if ((unsigned char)s->password[i] < 32 || (unsigned char)s->password[i] > 126)
-                return false;
+                return "password";
     if (n == 64)
         for (size_t i = 0; i < n; ++i)
             if (!isxdigit((unsigned char)s->password[i]))
-                return false;
-    if ((complete && !s->ssid[0]) || ((complete || s->tenant[0]) && !guid_valid(s->tenant)) ||
-        ((complete || s->client[0]) && !guid_valid(s->client)) || !s->ntp[0])
-        return false;
+                return "password";
+    if (complete && !s->ssid[0])
+        return "ssid";
+    if ((complete || s->tenant[0]) && !guid_valid(s->tenant))
+        return "tenant";
+    if ((complete || s->client[0]) && !guid_valid(s->client))
+        return "client";
+    if (!s->ntp[0])
+        return "ntp";
     for (const char *p = s->ntp; *p; ++p)
         if (!(isalnum((unsigned char)*p) || *p == '.' || *p == '-'))
-            return false;
-    return s->poll_seconds >= 2 && s->poll_seconds <= 300 && s->stale_seconds >= 30 &&
-           s->stale_seconds <= 3600 && s->stale_seconds > s->poll_seconds && s->brightness >= 1 &&
-           s->brightness <= 100;
+            return "ntp";
+    if (s->poll_seconds < 2 || s->poll_seconds > 300)
+        return "poll_seconds";
+    if (s->stale_seconds < 30 || s->stale_seconds > 3600 || s->stale_seconds <= s->poll_seconds)
+        return "stale_seconds";
+    if (s->brightness < 1 || s->brightness > 100)
+        return "brightness";
+    return NULL;
+}
+bool settings_valid(const frame_settings_t *s, bool complete)
+{
+    return invalid_field(s, complete) == NULL;
 }
 
 static esp_err_t persist(const settings_record_t *next)
@@ -171,31 +191,50 @@ static bool number_field(const cJSON *json, const char *name, int *value)
     *value = (int)n->valuedouble;
     return true;
 }
-bool settings_parse(const cJSON *json, frame_settings_t *s)
+const char *settings_parse_error(const cJSON *json, frame_settings_t *s)
 {
     *s = current;
     s->brightness = settings_brightness();
-    if (!cJSON_IsObject(json) || !string_field(json, "ssid", s->ssid, sizeof(s->ssid)) ||
-        !string_field(json, "tenant", s->tenant, sizeof(s->tenant)) ||
-        !string_field(json, "client", s->client, sizeof(s->client)) ||
-        !string_field(json, "ntp", s->ntp, sizeof(s->ntp)) ||
-        !number_field(json, "poll_seconds", &s->poll_seconds) ||
-        !number_field(json, "stale_seconds", &s->stale_seconds) ||
-        !number_field(json, "brightness", &s->brightness))
-        return false;
+    if (!cJSON_IsObject(json))
+        return "request";
+#define STRING(field)                                                                              \
+    if (!string_field(json, #field, s->field, sizeof(s->field)))                                   \
+    return #field
+    STRING(ssid);
+    STRING(tenant);
+    STRING(client);
+    STRING(ntp);
+#undef STRING
+#define NUMBER(field)                                                                              \
+    if (!number_field(json, #field, &s->field))                                                    \
+    return #field
+    NUMBER(poll_seconds);
+    NUMBER(stale_seconds);
+    NUMBER(brightness);
+#undef NUMBER
     const cJSON *open = cJSON_GetObjectItemCaseSensitive(json, "open_network");
     const cJSON *password = cJSON_GetObjectItemCaseSensitive(json, "password");
-    if ((open && !cJSON_IsBool(open)) || (password && !cJSON_IsString(password)))
-        return false;
+    if (open && !cJSON_IsBool(open))
+        return "open";
+    if (password && !cJSON_IsString(password))
+        return "password";
     if (cJSON_IsTrue(open))
         s->password[0] = 0;
     else if (password && password->valuestring[0] &&
              !string_field(json, "password", s->password, sizeof(s->password)))
-        return false;
-    return settings_valid(s, true);
+        return "password";
+    return invalid_field(s, true);
+}
+bool settings_parse(const cJSON *json, frame_settings_t *s)
+{
+    return settings_parse_error(json, s) == NULL;
 }
 cJSON *settings_json(void)
 {
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    bool trying = trial, restarting = reboot_at != 0;
+    int64_t remaining = boot_at + 180000000 - esp_timer_get_time();
+    xSemaphoreGive(mutex);
     const frame_settings_t *s = &current;
     cJSON *j = cJSON_CreateObject();
     if (!j || !cJSON_AddStringToObject(j, "ssid", s->ssid) ||
@@ -206,7 +245,10 @@ cJSON *settings_json(void)
         !cJSON_AddNumberToObject(j, "stale_seconds", s->stale_seconds) ||
         !cJSON_AddNumberToObject(j, "brightness", settings_brightness()) ||
         !cJSON_AddBoolToObject(j, "password_set", s->password[0] != 0) ||
-        !cJSON_AddBoolToObject(j, "trial", settings_trial())) {
+        !cJSON_AddBoolToObject(j, "trial", trying) ||
+        !cJSON_AddBoolToObject(j, "restart_pending", restarting) ||
+        !cJSON_AddNumberToObject(j, "trial_seconds_remaining",
+                                 trying && remaining > 0 ? (remaining + 999999) / 1000000 : 0)) {
         cJSON_Delete(j);
         return NULL;
     }

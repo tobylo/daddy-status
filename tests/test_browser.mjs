@@ -3,10 +3,11 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const html=readFileSync(new URL('../main/auth.html',import.meta.url),'utf8');
 const source=html.match(/<script>([\s\S]*?)<\/script>/)[1];
-const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{textContent:'',hidden:true,value:'',checked:false,children:[],appendChild(child){this.children.push(child);},addEventListener(event,fn){this[event]=fn;}}]));
+const elements=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,{textContent:'',hidden:true,value:'',checked:false,setAttribute(name,value){this[name]=value;},removeAttribute(name){delete this[name];},focus(){this.focused=true;},children:[],appendChild(child){this.children.push(child);},addEventListener(event,fn){this[event]=fn;}}]));
 const buttons=[...html.matchAll(/data-mode="([^"]+)"/g)].map(([,mode])=>({dataset:{mode},disabled:true,addEventListener(event,fn){this.click=fn;}}));
-let now=0, fail=false, postStatus=200, lastRequest, outcome='restart';
+let now=0, fail=false, postStatus=200, lastRequest, postBody={error:"storage"}, settingsFail=false, outcome='restart';
 const base={connected:true,error:'none',service:'ready',activity:'Available',fresh:true,age_seconds:1,display:'green',poll_seconds:10,uptime_seconds:600,led_gpio:13,brightness_percent:100,test_seconds:0,control_token:'test-token'};
+let settings={ssid:'network',tenant:'tenant',client:'client',ntp:'pool.ntp.org',poll_seconds:10,stale_seconds:60,brightness:100,password_set:true,trial:false,restart_pending:false,control_token:'test-token'};
 let body={...base,state:'code',user_code:'ABCD-EFGH',expires_in:2};
 const context=vm.createContext({
   document:{getElementById:id=>elements[id],createElement:()=>({textContent:''}),querySelectorAll:()=>buttons},
@@ -15,8 +16,8 @@ const context=vm.createContext({
  fetch:async(url,options)=>{
   if(fail)throw Error('Offline');
   lastRequest={url,...options};
-  if(options.method==='POST')return {ok:postStatus===200,json:async()=>({ok:true,outcome})};
-  if(url==='/api/settings')return {ok:true,json:async()=>({ssid:'network',tenant:'tenant',client:'client',ntp:'pool.ntp.org',poll_seconds:10,stale_seconds:60,brightness:100,password_set:true,trial:false})};
+  if(options.method==='POST')return {ok:postStatus===200,status:postStatus,json:async()=>postStatus===200?{ok:true,outcome}:postBody};
+  if(url==='/api/settings'){if(settingsFail)throw Error('Offline');return {ok:true,json:async()=>settings};}
   return {ok:true,json:async()=>body};
  }
 });
@@ -65,7 +66,7 @@ console.log('Browser auth, dashboard health, escaped text, LED actions, errors, 
 assert.equal(elements['setting-password'].value,'');
 assert.equal(elements['setting-ssid'].value,'network');
 postStatus=500;await vm.runInContext('changeSettings("save")',context);
-assert.match(elements['settings-status'].textContent,/not confirmed/);
+assert.match(elements['settings-status'].textContent,/storage failed/);
 assert.equal(lastRequest.url,'/api/settings');
 assert.equal(lastRequest.headers['X-Frame-Token'],'test-token');
 assert.equal(JSON.parse(lastRequest.body).poll_seconds,10);
@@ -82,6 +83,55 @@ assert.equal(elements['save-settings'].disabled,true);
 vm.runInContext('restarting=false',context);
 outcome='restart';await vm.runInContext('changeSettings("reset_auth")',context);
 assert.deepEqual(JSON.parse(lastRequest.body),{action:'reset_auth'});
-assert.match(elements['settings-status'].textContent,/restarting/);
+assert.match(elements['settings-status'].textContent,/Restart pending/);
 assert.equal(elements['save-settings'].disabled,true);
 console.log('Browser settings loading, failed saves, request token and restart feedback passed');
+
+// Responses from the old boot must not unlock controls.
+await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,true);
+settings={...settings,control_token:'second-boot',trial:true,trial_seconds_remaining:120};
+body.control_token='second-boot';
+await vm.runInContext('update()',context);
+assert.equal(elements['trial-progress'].hidden,false);
+assert.equal(elements['trial-progress'].value,60);
+assert.equal(elements['save-settings'].disabled,true);
+now+=1000;vm.runInContext('tick()',context);
+assert.match(elements['trial-status'].textContent,/119 seconds/);
+settings.trial=false;
+await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,false);
+assert.equal(elements['trial-status'].hidden,true);
+elements['setting-ssid'].value='unsaved edit';
+await vm.runInContext('update()',context);
+assert.equal(elements['setting-ssid'].value,'unsaved edit');
+settingsFail=true;await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,true);
+settingsFail=false;await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,false);
+assert.equal(elements['setting-ssid'].value,'unsaved edit');
+assert.match(elements['settings-status'].textContent,/connection restored/);
+postStatus=400;postBody={error:'validation',field:'stale_seconds'};
+await vm.runInContext('changeSettings("save")',context);
+assert.equal(elements['setting-stale_seconds']['aria-invalid'],'true');
+assert.equal(elements['setting-stale_seconds'].focused,true);
+assert.match(elements['error-stale_seconds'].textContent,/greater than/);
+postStatus=409;postBody={error:'restart_or_trial_pending'};
+settings.restart_pending=true;
+await vm.runInContext('changeSettings("save")',context);
+assert.match(elements['settings-status'].textContent,/Restart pending/);
+assert.equal(elements['save-settings'].disabled,true);
+fail=true;await vm.runInContext('update()',context);
+fail=false;settings={...settings,restart_pending:false,control_token:'rollback-boot',ssid:'previous-network'};
+body.control_token='rollback-boot';
+await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,false);
+assert.equal(elements['setting-ssid'].value,'previous-network');
+assert.match(elements['settings-status'].textContent,/reconnected/);
+// A lost save response is reconciled by polling without erasing edits on the same boot.
+fail=true;await vm.runInContext('changeSettings("save")',context);
+assert.match(elements['settings-status'].textContent,/connection lost/);
+fail=false;settings.restart_pending=true;
+await vm.runInContext('update()',context);
+assert.equal(elements['save-settings'].disabled,true);
+console.log('Field errors, trial progress, pending restart, preserved edits and reboot recovery passed');

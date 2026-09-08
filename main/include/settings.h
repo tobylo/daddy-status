@@ -17,6 +17,8 @@ void settings_defaults(frame_settings_t *value);
 bool settings_valid(const frame_settings_t *value, bool complete);
 /* Parse a complete form; omitted/empty password keeps the existing secret.
  * Explicit open_network=true clears it. No secrets are returned by settings_json. */
+/* Returns the first invalid field name, or NULL on success. */
+const char *settings_parse_error(const cJSON *json, frame_settings_t *value);
 bool settings_parse(const cJSON *json, frame_settings_t *value);
 cJSON *settings_json(void);
 typedef enum {
