@@ -26,43 +26,79 @@ static esp_err_t render(const led_rgb_t frame[STATUS_LED_COUNT])
     return led_strip_refresh(strip);
 }
 
+typedef struct {
+    led_rgb_t previous[STATUS_LED_COUNT];
+    bool rendered;
+    bool failed;
+} render_state_t;
+
+static void record_render_failure(render_state_t *state, esp_err_t err)
+{
+    if (!state->failed)
+        ESP_LOGE(TAG, "LED output failed: %s; retrying", esp_err_to_name(err));
+    state->failed = true;
+    state->rendered = false;
+}
+
+static void record_render_success(render_state_t *state,
+                                  const led_rgb_t frame[STATUS_LED_COUNT])
+{
+    memcpy(state->previous, frame, sizeof(state->previous));
+    state->rendered = true;
+    if (state->failed)
+        ESP_LOGI(TAG, "LED output recovered");
+    state->failed = false;
+}
+
+/* Cache only successful output; failed writes must be retried even for identical pixels. */
+static void render_if_changed(display_mode_t mode, uint64_t elapsed_ms, render_state_t *state)
+{
+    led_rgb_t frame[STATUS_LED_COUNT];
+    if (!led_frame(mode, elapsed_ms, settings_brightness(), frame))
+        return;
+    if (state->rendered && memcmp(state->previous, frame, sizeof(frame)) == 0)
+        return;
+
+    esp_err_t err = render(frame);
+    if (err != ESP_OK)
+        record_render_failure(state, err);
+    else
+        record_render_success(state, frame);
+}
+
+static TickType_t next_wait_ticks(display_mode_t mode, bool failed)
+{
+    if (failed)
+        return task_ticks_ms(250);
+    return led_mode_animated(mode) ? task_ticks_ms(15) : portMAX_DELAY;
+}
+
+/* Refresh notifications wake the task without restarting the current animation. */
+static bool take_mode_change(display_mode_t *mode, int64_t *started, TickType_t wait)
+{
+    display_mode_t next;
+    if (xQueueReceive(mode_queue, &next, wait) != pdTRUE)
+        return false;
+    if (next >= DISPLAY_MODE_COUNT || next == *mode)
+        return false;
+    *mode = next;
+    *started = esp_timer_get_time();
+    return true;
+}
+
 /* Only this task accesses the driver after initialization. Never delete it to change modes. */
 static void led_task(void *unused)
 {
     display_mode_t mode = DISPLAY_CONNECTING;
     int64_t started = esp_timer_get_time();
-    led_rgb_t previous[STATUS_LED_COUNT] = {0};
-    bool rendered = false, failed = false;
+    render_state_t state = {0};
     int64_t last_diagnostic = 0;
     for (;;) {
         diagnostics_sample("leds", &last_diagnostic);
-        led_rgb_t frame[STATUS_LED_COUNT];
         uint64_t elapsed_ms = (esp_timer_get_time() - started) / 1000;
-        if (led_frame(mode, elapsed_ms, settings_brightness(), frame) &&
-            (!rendered || memcmp(previous, frame, sizeof(frame)))) {
-            esp_err_t err = render(frame);
-            if (err == ESP_OK) {
-                memcpy(previous, frame, sizeof(frame));
-                rendered = true;
-                if (failed)
-                    ESP_LOGI(TAG, "LED output recovered");
-                failed = false;
-            } else {
-                if (!failed)
-                    ESP_LOGE(TAG, "LED output failed: %s; retrying", esp_err_to_name(err));
-                failed = true;
-                rendered = false;
-            }
-        }
-        TickType_t wait = failed ? task_ticks_ms(250)
-                                 : (led_mode_animated(mode) ? task_ticks_ms(15) : portMAX_DELAY);
-        display_mode_t next;
-        if (xQueueReceive(mode_queue, &next, wait) == pdTRUE && next < DISPLAY_MODE_COUNT &&
-            next != mode) {
-            mode = next;
-            started = esp_timer_get_time();
-            rendered = false;
-        }
+        render_if_changed(mode, elapsed_ms, &state);
+        if (take_mode_change(&mode, &started, next_wait_ticks(mode, state.failed)))
+            state.rendered = false;
     }
 }
 
