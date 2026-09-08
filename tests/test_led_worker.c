@@ -48,42 +48,72 @@ BaseType_t xQueueSend(QueueHandle_t q, const void *item, TickType_t wait)
         return pdFALSE;
     return xQueueOverwrite(q, item);
 }
+static void select_busy(void)
+{
+    assert(pixels[0].red == 180); /* Connecting frame, then DND. */
+    assert(leds_set_mode(DISPLAY_BUSY) == ESP_OK);
+}
+
+static void select_available(void)
+{
+    assert(leds_set_mode(DISPLAY_AVAILABLE) == ESP_OK);
+}
+
+static void dim_static_display(void)
+{
+    assert(pixels[0].green == 140 && pixels[1].green == 140);
+    test_brightness = 50;
+    leds_refresh(); /* Wake a static display with no mode change. */
+}
+
+static void refresh_unchanged_display(void)
+{
+    assert(pixels[0].green == 70 && pixels[1].green == 70);
+    leds_refresh(); /* Unchanged pixels should not hit the driver again. */
+}
+
+static void finish_worker(void)
+{
+    longjmp(finished, 1);
+}
+
+typedef struct {
+    unsigned expected_refreshes;
+    TickType_t expected_wait; /* Zero leaves animated cadence unconstrained. */
+    void (*action)(void);     /* NULL advances time without delivering a queue item. */
+} queue_step_t;
+
+static const queue_step_t queue_script[] = {
+    {2, 0, select_busy},
+    {3, pdMS_TO_TICKS(250) ? pdMS_TO_TICKS(250) : 1, NULL}, /* Retry failed output. */
+    {4, portMAX_DELAY, select_available},
+    {5, portMAX_DELAY, dim_static_display},
+    {6, portMAX_DELAY, refresh_unchanged_display},
+    {6, portMAX_DELAY, finish_worker},
+};
+
+static bool run_queue_step(TickType_t wait)
+{
+    assert(event_step < sizeof(queue_script) / sizeof(queue_script[0]));
+    const queue_step_t *step = &queue_script[event_step++];
+    assert(refreshes == step->expected_refreshes);
+    assert(created_tasks == 1);
+    if (step->expected_wait)
+        assert(wait == step->expected_wait);
+    if (step->action) {
+        step->action();
+        assert(queue.pending);
+        return true;
+    }
+    now += (int64_t)wait * 1000000 / TEST_FREERTOS_HZ;
+    return false;
+}
+
 BaseType_t xQueueReceive(QueueHandle_t q, void *item, TickType_t wait)
 {
     assert(q == &queue && queue.allocated && wait > 0);
-    if (!queue.pending) {
-        switch (event_step++) {
-        case 0:
-            assert(refreshes == 2); /* Connecting frame, then DND. */
-            assert(pixels[0].red == 180);
-            assert(leds_set_mode(DISPLAY_BUSY) == ESP_OK);
-            break;
-        case 1:
-            assert(refreshes == 3 &&
-                   wait == (pdMS_TO_TICKS(250) ? pdMS_TO_TICKS(250)
-                                               : 1)); /* Retry the failed output. */
-            now += (int64_t)wait * 1000000 / TEST_FREERTOS_HZ;
-            return pdFALSE;
-        case 2:
-            assert(refreshes == 4 && wait == portMAX_DELAY);
-            assert(leds_set_mode(DISPLAY_AVAILABLE) == ESP_OK);
-            break;
-        case 3:
-            assert(refreshes == 5 && pixels[0].green == 140 && pixels[1].green == 140);
-            assert(wait == portMAX_DELAY && created_tasks == 1);
-            test_brightness = 50;
-            leds_refresh(); /* Wake a static display with no mode change. */
-            break;
-        case 4:
-            assert(refreshes == 6 && pixels[0].green == 70 && pixels[1].green == 70);
-            assert(wait == portMAX_DELAY);
-            leds_refresh(); /* Unchanged pixels should not hit the driver again. */
-            break;
-        default:
-            assert(refreshes == 6 && wait == portMAX_DELAY && created_tasks == 1);
-            longjmp(finished, 1);
-        }
-    }
+    if (!queue.pending && !run_queue_step(wait))
+        return pdFALSE;
     memcpy(item, &queue.mode, sizeof(queue.mode));
     queue.pending = false;
     return pdTRUE;
@@ -154,8 +184,9 @@ int main(void)
     assert(leds_set_mode(DISPLAY_MODE_COUNT) == ESP_ERR_INVALID_ARG);
     assert(leds_set_mode(DISPLAY_PLAY) == ESP_OK);
     assert(leds_set_mode(DISPLAY_DO_NOT_DISTURB) == ESP_OK); /* Latest mode wins. */
-    leds_refresh(); /* Preserve the queued DND mode. */
+    leds_refresh();                                          /* Preserve the queued DND mode. */
     if (!setjmp(finished))
         worker_fn(NULL);
+    assert(event_step == sizeof(queue_script) / sizeof(queue_script[0]));
     puts("LED worker queue, initialization, retry, and mode-change tests passed");
 }
