@@ -23,6 +23,11 @@ jobs:
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # Tags become file names, JSON strings and sed replacements downstream.
+          if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?'; then
+            echo "::error::Tag $GITHUB_REF_NAME must look like v1.2.3 or v1.2.3-rc1." >&2
+            exit 1
+          fi
           tagged=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
           if ! git merge-base --is-ancestor "$tagged" origin/master; then
             echo "::error::Tag $GITHUB_REF_NAME ($tagged) is not reachable from master." >&2
@@ -72,7 +77,8 @@ jobs:
               echo "::error::Factory profile must not enable OTA." >&2
               exit 1
             fi
-            idf.py "${args[@]}" merge-bin -f raw -o "release/$name.bin"
+            # merge-bin resolves relative output paths inside the build directory.
+            idf.py "${args[@]}" merge-bin -f raw -o "$PWD/release/$name.bin"
           else
             grep -qx 'CONFIG_FRAME_OTA_ENABLE=y' "$build/sdkconfig"
             grep -qx 'CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y' "$build/sdkconfig"
@@ -82,7 +88,7 @@ jobs:
             cp "$build/daddy-status.bin" "release/$name.bin"
           fi
           if [ "$PROFILE" = ota-frame ]; then
-            idf.py "${args[@]}" merge-bin -f raw -o "release/$name-factory.bin"
+            idf.py "${args[@]}" merge-bin -f raw -o "$PWD/release/$name-factory.bin"
           fi
           ls -l release
       - name: Remove the signing key from the runner
@@ -165,7 +171,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           mkdir site
-          sed "s/__TAG__/$TAG/g; s#__REPO__#$GITHUB_REPOSITORY#g" web/index.html > site/index.html
+          tag_for_sed=$(printf '%s' "$TAG" | sed 's/[\/&\\]/\\&/g')
+          sed "s/__TAG__/$tag_for_sed/g; s#__REPO__#$GITHUB_REPOSITORY#g" web/index.html > site/index.html
           for profile in factory ota-frame-factory; do
             cp "release/daddy-status-$TAG-$profile.bin" site/
             cat > "site/manifest-$profile.json" <<EOF

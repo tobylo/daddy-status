@@ -40,7 +40,8 @@ jobs:
           else
             idf.py build
             # Release factory images are merged from this profile.
-            idf.py merge-bin -f raw -o build/factory.bin
+            # merge-bin resolves its output path inside the build directory.
+            idf.py merge-bin -f raw -o factory.bin
             test -s build/factory.bin
           fi
       - name: Host tests with sanitizers
