@@ -10,7 +10,8 @@ static unsigned writes, reads, drained;
 static esp_err_t save_result;
 static esp_netif_t netif;
 static esp_app_desc_t app = {.version = "test"};
-static uint8_t input[265];
+static uint8_t input[265], last_packet[267];
+static unsigned station_address;
 static size_t input_length, input_at;
 
 const esp_app_desc_t *esp_app_get_description(void)
@@ -40,6 +41,8 @@ int uart_write_bytes(int port, const void *data, size_t length)
     assert(bytes[0] == '\n' && bytes[length - 1] == '\n');
     assert(!memcmp(bytes + 1, "IMPROV", 6));
     assert(length == (size_t)bytes[9] + 12);
+    assert(length <= sizeof(last_packet));
+    memcpy(last_packet, data, length);
     ++writes;
     return length;
 }
@@ -75,7 +78,7 @@ esp_netif_t *esp_netif_get_handle_from_ifkey(const char *key)
 
 esp_err_t esp_netif_get_ip_info(esp_netif_t *n, esp_netif_ip_info_t *ip)
 {
-    ip->ip.addr = 1234;
+    ip->ip.addr = station_address;
     return ESP_OK;
 }
 
@@ -83,6 +86,7 @@ static void boot(bool trying)
 {
     restarting = false; /* BSS is cleared on a real restart. */
     trial = trying;
+    station_address = 1234;
     writes = reads = drained = 0;
     input_at = input_length = 0;
     improv_serial_init();
@@ -97,6 +101,10 @@ static void test_trial_lifecycle(void)
     trial = false; /* settings_tick committed the DHCP-successful trial. */
     improv_serial_tick(200, false);
     assert(service.state == 4 && writes == 2);
+    const char *url = "http://1234/";
+    assert(last_packet[8] == 4 && last_packet[10] == 1);
+    assert(last_packet[12] == strlen(url));
+    assert(!memcmp(last_packet + 13, url, strlen(url)));
     boot(true);
     online = false;
     improv_serial_tick(180000000, true);
@@ -126,8 +134,28 @@ static void test_pending_restart(void)
     assert(save_wifi("home", "password") == 0 && restarting);
     online = true;
     service.state = 3;
-    improv_serial_tick(100, false);
+    improv_serial_tick(100, true);
     assert(service.state == 3 && writes == 0);
+}
+
+static void test_invalid_address_and_unrelated_restart(void)
+{
+    boot(false);
+    online = true;
+    station_address = 0;
+    improv_serial_tick(100, false);
+    assert(service.state == 2 && writes == 0);
+    station_address = 1234;
+    improv_serial_tick(200, false);
+    assert(service.state == 4);
+    station_address = 0;
+    improv_serial_tick(300, false);
+    assert(service.state == 2);
+    boot(true);
+    trial = false;
+    online = false;
+    improv_serial_tick(400, true);
+    assert(service.state == 3 && writes == 0 && drained == 1);
 }
 
 int main(void)
@@ -135,5 +163,6 @@ int main(void)
     test_trial_lifecycle();
     test_serial_dispatch();
     test_pending_restart();
+    test_invalid_address_and_unrelated_restart();
     puts("Improv UART dispatch, reboot handoff, trial commit and failure flush passed");
 }
