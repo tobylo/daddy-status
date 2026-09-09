@@ -84,7 +84,9 @@ and networking start only after successful storage initialization.
 
 Keep the encrypted configuration and original signing key for every subsequent
 build. Upload the signed `build-encrypted/daddy-status.bin` through the existing
-OTA endpoint; IDF writes the application to encrypted flash. Never erase or
+OTA endpoint; IDF writes the application to encrypted flash. Tagged GitHub
+releases do not include this profile: build and sign it locally with a key
+that is not stored in CI. Never erase or
 replace `nvs_keys` during updates. Losing these keys makes existing NVS contents
 unreadable. Reset Microsoft sign-in through the browser to clear authorization
 without replacing encryption keys or erasing other settings.

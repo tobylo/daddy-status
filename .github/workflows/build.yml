@@ -39,6 +39,9 @@ jobs:
             idf.py -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame' build
           else
             idf.py build
+            # Release factory images are merged from this profile.
+            idf.py merge-bin -f raw -o build/factory.bin
+            test -s build/factory.bin
           fi
       - name: Host tests with sanitizers
         if: matrix.configuration == 'default'

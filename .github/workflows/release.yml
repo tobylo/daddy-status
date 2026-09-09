@@ -1,0 +1,189 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
+    # The `release` environment holds SIGNING_KEY_PEM. Restrict it to v* tags in
+    # the repository settings so no branch build can reach the key.
+    environment: release
+    strategy:
+      matrix:
+        profile: [factory, ota-frame]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a tag on master
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          tagged=$(git rev-parse "${GITHUB_REF_NAME}^{commit}")
+          if ! git merge-base --is-ancestor "$tagged" origin/master; then
+            echo "::error::Tag $GITHUB_REF_NAME ($tagged) is not reachable from master." >&2
+            exit 1
+          fi
+      - name: Install the release signing key
+        if: matrix.profile != 'factory'
+        shell: bash
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.SIGNING_KEY_PEM }}
+        run: |
+          if [ -z "$SIGNING_KEY_PEM" ]; then
+            echo "::error::SIGNING_KEY_PEM is not set in the 'release' environment (docs/firmware-updates.md)." >&2
+            exit 1
+          fi
+          if [ ! -s signature_verification_key.bin ]; then
+            echo "::error::signature_verification_key.bin is not committed; extract it from the signing key first." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$SIGNING_KEY_PEM" > secure_boot_signing_key.pem
+          . "$IDF_PATH/export.sh"
+          espsecure extract-public-key --version 1 --keyfile secure_boot_signing_key.pem /tmp/release_public_key.bin
+          if ! cmp -s /tmp/release_public_key.bin signature_verification_key.bin; then
+            echo "::error::SIGNING_KEY_PEM does not match the committed signature_verification_key.bin. Refusing to strand devices." >&2
+            exit 1
+          fi
+      - name: Build ESP32 firmware
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          . "$IDF_PATH/export.sh"
+          case "$PROFILE" in
+            factory) defaults='sdkconfig.defaults' ;;
+            ota-frame) defaults='sdkconfig.defaults;sdkconfig.frame;sdkconfig.ota' ;;
+            *) echo "unknown profile $PROFILE" >&2; exit 1 ;;
+          esac
+          build="build-$PROFILE"
+          args=(-B "$build" -D "SDKCONFIG=$build/sdkconfig" -D "SDKCONFIG_DEFAULTS=$defaults" -D "PROJECT_VER=$GITHUB_REF_NAME")
+          idf.py "${args[@]}" build
+          mkdir -p release
+          name="daddy-status-$GITHUB_REF_NAME-$PROFILE"
+          cp "$build/daddy-status.elf" "release/$name.elf"
+          if [ "$PROFILE" = factory ]; then
+            if grep -qx 'CONFIG_FRAME_OTA_ENABLE=y' "$build/sdkconfig"; then
+              echo "::error::Factory profile must not enable OTA." >&2
+              exit 1
+            fi
+            idf.py "${args[@]}" merge-bin -f raw -o "release/$name.bin"
+          else
+            grep -qx 'CONFIG_FRAME_OTA_ENABLE=y' "$build/sdkconfig"
+            grep -qx 'CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y' "$build/sdkconfig"
+            grep -qx 'CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y' "$build/sdkconfig"
+            grep -qx 'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y' "$build/sdkconfig"
+            espsecure verify-signature --version 1 --keyfile signature_verification_key.bin "$build/daddy-status.bin"
+            cp "$build/daddy-status.bin" "release/$name.bin"
+          fi
+          if [ "$PROFILE" = ota-frame ]; then
+            idf.py "${args[@]}" merge-bin -f raw -o "release/$name-factory.bin"
+          fi
+          ls -l release
+      - name: Remove the signing key from the runner
+        if: always()
+        shell: bash
+        run: rm -f secure_boot_signing_key.pem /tmp/release_public_key.bin
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: firmware-${{ matrix.profile }}
+          path: release/
+          if-no-files-found: error
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: firmware-*
+          path: release
+          merge-multiple: true
+      - name: Publish GitHub release with generated notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: |
+          cp signature_verification_key.bin release/
+          cd release
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+          {
+            echo "Firmware built by CI from tag \`$TAG\`. Flash a factory image with the [web flasher]($PAGES_URL)"
+            echo "or with esptool at offset 0x0; upload an app image through the device's OTA page."
+            echo
+            echo "| Asset | Profile | Signed | Use |"
+            echo "| --- | --- | --- | --- |"
+            echo "| \`daddy-status-$TAG-factory.bin\` | default | no | USB install, no OTA, LED GPIO 25 |"
+            echo "| \`daddy-status-$TAG-ota-frame-factory.bin\` | frame + ota | release key | USB install with signed OTA, LED GPIO 13 |"
+            echo "| \`daddy-status-$TAG-ota-frame.bin\` | frame + ota | release key | OTA update for devices running an ota-frame image |"
+            echo
+            echo "Factory images erase saved settings and sign-in; OTA updates keep them. Devices flashed"
+            echo "from a release accept only images signed with the release key; verify with"
+            echo "\`espsecure verify-signature --version 1 --keyfile signature_verification_key.bin <image>\`."
+            echo "The \`.elf\` files decode crash backtraces. See docs/firmware-updates.md."
+            echo
+          } > ../notes.md
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes \
+            --notes-file ../notes.md "${prerelease[@]}" \
+            --repo "$GITHUB_REPOSITORY" -- *
+  pages:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: firmware-*
+          path: release
+          merge-multiple: true
+      - name: Assemble the web flasher site
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir site
+          sed "s/__TAG__/$TAG/g; s#__REPO__#$GITHUB_REPOSITORY#g" web/index.html > site/index.html
+          for profile in factory ota-frame-factory; do
+            cp "release/daddy-status-$TAG-$profile.bin" site/
+            cat > "site/manifest-$profile.json" <<EOF
+          {
+            "name": "Daddy Status ($profile)",
+            "version": "$TAG",
+            "new_install_prompt_erase": true,
+            "new_install_improv_wait_time": 0,
+            "builds": [
+              { "chipFamily": "ESP32", "parts": [ { "path": "daddy-status-$TAG-$profile.bin", "offset": 0 } ] }
+            ]
+          }
+          EOF
+          done
+          ls -l site
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

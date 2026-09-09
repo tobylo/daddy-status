@@ -141,7 +141,7 @@ idf.py build          # also downloads the pinned cJSON sources
 clang-format -i main/*.c main/include/*.h tests/*.c tests/fakes/*.h tests/fakes/freertos/*.h
 ```
 
-CI compiles default and diagnostics-enabled firmware and runs the host suites.
+CI compiles every profile, merges a factory image, and runs the host suites.
 Tests cover parsing/encoding, authentication, storage, presence mapping, state
 freshness, LED frames and worker control flow, and HTTP response handling. Parser
 nesting is limited to 16 to fit the embedded stack. See [architecture](docs/architecture.md),
@@ -266,4 +266,6 @@ Signed OTA uploads and automatic boot rollback are available with the opt-in
 layout; subsequent signed application images can be uploaded over Wi-Fi without
 opening the frame. Default builds reject uploads. Follow the
 [provisioning, upload, and rollback guide](docs/firmware-updates.md), including
-signing-key backup and the first-boot health checks.
+signing-key backup and the first-boot health checks. Pushing a `v*` tag on
+`master` publishes a GitHub release with factory and signed OTA images plus
+generated notes, and deploys a browser-based flasher to GitHub Pages.
