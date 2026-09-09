@@ -8,7 +8,22 @@ typedef int portMUX_TYPE;
 #define portEXIT_CRITICAL(m) ((void)(m))
 #include "../main/web_server.c"
 const char test_page[] __asm__("_binary_auth_html_start") = "<!doctype html>";
+const char test_dashboard[] __asm__("_binary_dashboard_js_start") = "dashboard";
+const char test_firmware[] __asm__("_binary_firmware_js_start") = "firmware";
+const char test_transfer[] __asm__("_binary_firmware_transfer_js_start") = "transfer";
+const char test_releases[] __asm__("_binary_firmware_releases_js_start") = "releases";
 static wifi_diagnostics_t diagnostics;
+static int downloads;
+cJSON *firmware_status_json(void)
+{
+    return cJSON_CreateObject();
+}
+esp_err_t firmware_download(httpd_req_t *req, const char *id)
+{
+    assert(!strcmp(id, "553436749"));
+    ++downloads;
+    return ESP_OK;
+}
 void wifi_diagnostics_snapshot(wifi_diagnostics_t *out)
 {
     *out = diagnostics;
@@ -143,6 +158,10 @@ static void dashboard_and_controls(void)
     json = cJSON_Parse(output);
     assert(!strcmp(json_string(json, "error"), "permission"));
     cJSON_Delete(json);
+}
+
+static void firmware_authorization(void)
+{
     httpd_req_t req = {.content_len = 14};
     request_body = "{\"mode\":\"red\"}";
     request_token = NULL;
@@ -151,6 +170,12 @@ static void dashboard_and_controls(void)
     assert(firmware_post(&req) == ESP_FAIL && error_status == 403);
     request_token = control_token;
     assert(firmware_post(&req) == ESP_OK);
+}
+
+static void led_authorization(void)
+{
+    httpd_req_t req = {.content_len = 14};
+    request_body = "{\"mode\":\"red\"}";
     request_token = NULL;
     assert(led_test_post(&req) == ESP_FAIL && error_status == 403);
     request_token = "wrong";
@@ -303,7 +328,7 @@ static void dashboard_history_and_allocations(void)
 static bool valid_settings;
 static settings_save_result_t save_result;
 
-int main(void)
+static void startup_and_auth(void)
 {
     fail_start = true;
     assert(web_server_start() == ESP_FAIL && !callback && !stops);
@@ -312,7 +337,7 @@ int main(void)
     assert(web_server_start() == ESP_FAIL && !callback && stops == 1);
     registrations = 0;
     fail_registration = 0;
-    assert(web_server_start() == ESP_OK && registrations == 7 && callback);
+    assert(web_server_start() == ESP_OK && registrations == 13 && callback);
     check("waiting", "", 0);
     char borrowed[] = "ABCD-EFGH";
     callback(AUTH_CODE_READY, borrowed, 5000000);
@@ -329,10 +354,10 @@ int main(void)
     callback(AUTH_CODE_READY, "\"<script>", now + 1000000);
     check("code", "\"<script>", 1);
     assert(index_get(NULL) == ESP_OK && !strcmp(output, test_page));
-    dashboard_and_controls();
-    post_error_contract();
-    led_modes();
-    dashboard_history_and_allocations();
+}
+
+static void settings_post_success(void)
+{
     request_body = "{\"action\":\"reset_auth\"}";
     httpd_req_t req = {.content_len = strlen(request_body)};
     body_offset = 0;
@@ -354,7 +379,11 @@ int main(void)
         assert(response && !strcmp(json_string(response, "outcome"), outcomes[save_result]));
         cJSON_Delete(response);
     }
-    req.content_len = 1537;
+}
+
+static void settings_post_errors(void)
+{
+    httpd_req_t req = {.content_len = 1537};
     assert(settings_post_handler(&req) == ESP_FAIL && error_status == 400);
     request_body = "{\"action\":\"reset_auth\"}";
     req.content_len = strlen(request_body);
@@ -367,7 +396,39 @@ int main(void)
     assert(settings_post_handler(&req) == ESP_OK && error_status == 500);
     assert(strstr(output, "storage"));
     assert(settings_get_handler(NULL) == ESP_OK && strstr(output, control_token));
-    puts("web routes, startup cleanup, code ownership, expiry, and JSON tests passed");
+}
+
+static void firmware_routes(void)
+{
+    assert(firmware_get(NULL) == ESP_OK && strstr(output, control_token));
+    httpd_req_t req = {.content_len = 9, .user_ctx = (void *)test_firmware};
+    assert(script_get(&req) == ESP_OK && !strcmp(output, test_firmware));
+    request_body = "553436749";
+    body_offset = 0;
+    request_token = NULL;
+    assert(firmware_asset_post(&req) == ESP_FAIL && error_status == 403);
+    assert(!downloads && !body_offset);
+    request_token = control_token;
+    req.content_len = 21;
+    assert(firmware_asset_post(&req) == ESP_FAIL && error_status == 400);
+    assert(!downloads);
+    req.content_len = 9;
+    assert(firmware_asset_post(&req) == ESP_OK && downloads == 1);
+}
+
+int main(void)
+{
+    startup_and_auth();
+    dashboard_and_controls();
+    firmware_authorization();
+    led_authorization();
+    post_error_contract();
+    led_modes();
+    dashboard_history_and_allocations();
+    settings_post_success();
+    settings_post_errors();
+    firmware_routes();
+    puts("Web routes, authorization, startup, dashboard and settings passed");
 }
 
 /* Storage transitions are exercised with real NVS boundaries in test_settings. */

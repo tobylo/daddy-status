@@ -32,4 +32,8 @@ esp_err_t esp_http_client_perform(esp_http_client_handle_t client);
 int esp_http_client_get_status_code(esp_http_client_handle_t client);
 bool esp_http_client_is_complete_data_received(esp_http_client_handle_t client);
 esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client);
+esp_err_t esp_http_client_open(esp_http_client_handle_t client, int length);
+long long esp_http_client_fetch_headers(esp_http_client_handle_t client);
+long long esp_http_client_get_content_length(esp_http_client_handle_t client);
+int esp_http_client_read(esp_http_client_handle_t client, char *buffer, int size);
 #endif
