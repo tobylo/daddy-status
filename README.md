@@ -269,3 +269,12 @@ opening the frame. Default builds reject uploads. Follow the
 signing-key backup and the first-boot health checks. Pushing a `v*` tag on
 `master` publishes a GitHub release with factory and signed OTA images plus
 generated notes, and deploys a browser-based flasher to GitHub Pages.
+
+
+Release factory images with Improv support prompt for 2.4 GHz Wi-Fi credentials
+in the web flasher over USB. Enter the SSID manually and keep USB connected through
+the trial restart; **Visit device** then opens the frame's IP address. Configure
+Microsoft tenant/client settings on that page and sign in. A failed connection
+rolls back after three minutes; wait for the restart before retrying. No recovery
+password or open setup network is needed. Older factory releases without Improv
+require a locally configured build; see the [release guide](docs/firmware-updates.md).

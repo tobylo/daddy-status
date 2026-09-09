@@ -7,6 +7,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "graph_client.h"
+#include "improv.h"
 #include "ledcontrol.h"
 #include "protocol.h"
 #include "sdkconfig.h"
@@ -24,6 +25,7 @@ void app_main(void)
     QueueHandle_t queue = xQueueCreate(1, sizeof(app_status_t));
     ESP_ERROR_CHECK(queue ? ESP_OK : ESP_ERR_NO_MEM);
     wifi_init();
+    improv_serial_init();
     ESP_ERROR_CHECK(web_server_start());
     ESP_ERROR_CHECK(graph_client_init(queue));
     firmware_update_init();
@@ -35,7 +37,9 @@ void app_main(void)
         diagnostics_sample("main", &last_diagnostic);
         int64_t now = esp_timer_get_time();
         firmware_update_tick(wifi_is_connected(), now);
-        if (settings_tick(wifi_is_connected(), now))
+        bool reboot_due = settings_tick(wifi_is_connected(), now);
+        improv_serial_tick(now, reboot_due);
+        if (reboot_due)
             esp_restart();
         app_status_t received;
         if (xQueueReceive(queue, &received, refresh_ticks) == pdTRUE)

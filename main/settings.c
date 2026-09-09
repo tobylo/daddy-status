@@ -162,7 +162,8 @@ static bool record_valid(const settings_record_t *saved)
         return false;
     if (!settings_valid(&saved->active, false))
         return false;
-    return !saved->pending || settings_valid(&saved->candidate, true);
+    return !saved->pending ||
+           (settings_valid(&saved->candidate, false) && saved->candidate.ssid[0]);
 }
 
 static esp_err_t load_saved_record(void)
@@ -445,6 +446,46 @@ esp_err_t settings_save(const frame_settings_t *s, settings_save_result_t *resul
         leds_refresh();
     return err;
 }
+static bool wifi_strings_valid(const char *ssid, const char *password)
+{
+    if (!ssid || !password)
+        return false;
+    return *ssid && strlen(ssid) <= 32 && strlen(password) <= 64;
+}
+
+/* Caller holds the mutex. Always trial, including resubmitted credentials. */
+static esp_err_t save_wifi_trial(frame_settings_t *candidate)
+{
+    if (settings_busy())
+        return ESP_ERR_INVALID_STATE;
+    candidate->brightness = brightness;
+    settings_record_t next = record;
+    next.candidate = *candidate;
+    next.pending = 1;
+    next.tried = 0;
+    next.reset_auth = 0;
+    esp_err_t err = persist(&next);
+    if (err == ESP_OK)
+        reboot_at = esp_timer_get_time() + 2000000;
+    return err;
+}
+
+/* Serial provisioning supplies only Wi-Fi; Entra identity may still be empty. */
+esp_err_t settings_save_wifi(const char *ssid, const char *password)
+{
+    if (!wifi_strings_valid(ssid, password))
+        return ESP_ERR_INVALID_ARG;
+    frame_settings_t next = current;
+    strcpy(next.ssid, ssid);
+    strcpy(next.password, password);
+    if (!settings_valid(&next, false))
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(mutex, portMAX_DELAY);
+    esp_err_t err = save_wifi_trial(&next);
+    xSemaphoreGive(mutex);
+    return err;
+}
+
 esp_err_t settings_reset_auth(void)
 {
     xSemaphoreTake(mutex, portMAX_DELAY);

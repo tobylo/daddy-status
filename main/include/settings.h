@@ -30,6 +30,8 @@ typedef enum {
 /* Serialized saves: no-op, live brightness, restart, or Wi-Fi trial.
  * Result is written only on success. Other runtime settings stay intact until reboot. */
 esp_err_t settings_save(const frame_settings_t *value, settings_save_result_t *result);
+/* USB provisioning: validate Wi-Fi, preserve other settings, schedule trial reboot. */
+esp_err_t settings_save_wifi(const char *ssid, const char *password);
 esp_err_t settings_reset_auth(void);
 /* Main task: promotes DHCP-successful trials or rolls back after three minutes.
  * Returns true when a scheduled reboot is due. */

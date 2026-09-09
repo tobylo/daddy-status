@@ -135,6 +135,8 @@ jobs:
             echo "| \`daddy-status-$TAG-ota-frame-factory.bin\` | frame + ota | release key | USB install with signed OTA, LED GPIO 13 |"
             echo "| \`daddy-status-$TAG-ota-frame.bin\` | frame + ota | release key | OTA update for devices running an ota-frame image |"
             echo
+            echo "After USB flashing, enter Wi-Fi credentials in the browser Improv prompt. Keep USB connected"
+            echo "during the trial restart, then use Visit device to enter Microsoft tenant/client settings."
             echo "Factory images erase saved settings and sign-in; OTA updates keep them. Devices flashed"
             echo "from a release accept only images signed with the release key; verify with"
             echo "\`espsecure verify-signature --version 1 --keyfile signature_verification_key.bin <image>\`."
@@ -180,7 +182,7 @@ jobs:
             "name": "Daddy Status ($profile)",
             "version": "$TAG",
             "new_install_prompt_erase": true,
-            "new_install_improv_wait_time": 0,
+            "new_install_improv_wait_time": 10,
             "builds": [
               { "chipFamily": "ESP32", "parts": [ { "path": "daddy-status-$TAG-$profile.bin", "offset": 0 } ] }
             ]
