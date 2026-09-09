@@ -7,6 +7,7 @@
 #include "task_time.h"
 #include "wifi.h"
 #include <stdio.h>
+#include <string.h>
 
 #if !CONFIG_ESP_CONSOLE_UART
 #error "Improv provisioning requires the console UART"
@@ -17,10 +18,17 @@ static bool restarting;
 
 static void serial_write(const uint8_t *data, size_t length)
 {
+    /* ESP Web Tools recognizes packets at line boundaries. Fence off partial logs. */
+    uint8_t framed[267];
+    if (length > sizeof(framed) - 2)
+        return;
+    framed[0] = '\n';
+    memcpy(framed + 1, data, length);
+    framed[length + 1] = '\n';
     /* Share stdout's lock with ESP logging so logs cannot split a packet. */
     flockfile(stdout);
     fflush(stdout);
-    uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, length);
+    uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, framed, length + 2);
     funlockfile(stdout);
 }
 

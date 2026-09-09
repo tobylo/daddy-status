@@ -186,22 +186,35 @@ static void test_noop_and_brightness(frame_settings_t original)
     frame_settings_t next = original;
     /* Trailing bytes are not changes; no-op saves never touch NVS. */
     next.ssid[sizeof(next.ssid) - 1] = 'x';
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == 0 && refreshes == 0 && !settings_tick(false, 3000000));
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_UNCHANGED);
+    assert(writes == 0);
+    assert(refreshes == 0);
+    assert(!settings_tick(false, 3000000));
     next = original;
     next.brightness = 20;
     store_error = ESP_FAIL;
     assert(settings_save(&next, &result) == ESP_FAIL);
-    assert(settings_brightness() == original.brightness && refreshes == 0);
+    assert(settings_brightness() == original.brightness);
+    assert(refreshes == 0);
     store_error = 0;
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_APPLIED);
-    assert(settings_brightness() == 20 && refreshes == 1 && !settings_tick(false, 3000000));
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_APPLIED);
+    assert(settings_brightness() == 20);
+    assert(refreshes == 1);
+    assert(!settings_tick(false, 3000000));
     unsigned saved_writes = writes;
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == saved_writes && refreshes == 1);
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_UNCHANGED);
+    assert(writes == saved_writes);
+    assert(refreshes == 1);
     cJSON *j = settings_json();
     assert(cJSON_GetObjectItem(j, "brightness")->valueint == 20);
     cJSON_Delete(j);
+}
+
+static void test_brightness_survives_restart(frame_settings_t original)
+{
     assert(settings_init() == ESP_OK && !settings_trial() && settings_brightness() == 20);
     assert(settings_save(&original, &result) == ESP_OK && result == SETTINGS_APPLIED);
     assert(settings_init() == ESP_OK);
@@ -319,6 +332,7 @@ int main(void)
     test_field_validation(original);
     test_form_and_redaction(original);
     test_noop_and_brightness(original);
+    test_brightness_survives_restart(original);
     test_wifi_trial_restart(original);
     test_wifi_rollback_and_promotion(original);
     test_auth_reset();

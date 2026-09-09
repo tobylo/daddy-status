@@ -37,7 +37,9 @@ int uart_read_bytes(int port, void *data, uint32_t length, TickType_t wait)
 int uart_write_bytes(int port, const void *data, size_t length)
 {
     const uint8_t *bytes = data;
-    assert(!memcmp(bytes, "IMPROV", 6));
+    assert(bytes[0] == '\n' && bytes[length - 1] == '\n');
+    assert(!memcmp(bytes + 1, "IMPROV", 6));
+    assert(length == (size_t)bytes[9] + 12);
     ++writes;
     return length;
 }
