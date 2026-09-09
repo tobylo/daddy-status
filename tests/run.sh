@@ -17,6 +17,8 @@ run_test() {
     "${CC:-cc}" "${TEST_FLAGS[@]}" "$@" -lm -o "$TEST_BUILD/$name"
     "$TEST_BUILD/$name"
 }
+run_test improv_serial tests/test_improv_serial.c main/improv.c
+run_test improv tests/test_improv.c main/improv.c
 run_test protocol tests/test_protocol.c main/protocol.c "$CJSON/cJSON.c"
 run_test auth tests/settings_stub.c tests/test_auth.c main/auth_client.c main/token_storage.c main/presence.c \
     main/protocol.c "$CJSON/cJSON.c"

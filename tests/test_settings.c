@@ -78,10 +78,57 @@ esp_err_t nvs_commit(nvs_handle_t h)
 {
     return ESP_OK;
 }
-int main(void)
+static void test_serial_provisioning(void)
 {
+    disk = (settings_record_t){.version = 1};
+    settings_defaults(&disk.active);
+    disk.active.ssid[0] = disk.active.password[0] = 0;
+    disk.active.tenant[0] = disk.active.client[0] = 0;
+    exists = true;
+    clock_now = 0;
     assert(settings_init() == ESP_OK);
-    frame_settings_t original = *settings_get(), next = original;
+    assert(settings_save_wifi(NULL, "password") == ESP_ERR_INVALID_ARG);
+    assert(settings_save_wifi("home", NULL) == ESP_ERR_INVALID_ARG);
+    assert(settings_save_wifi("", "password") == ESP_ERR_INVALID_ARG);
+    assert(settings_save_wifi("home", "short") == ESP_ERR_INVALID_ARG);
+    assert(settings_save_wifi("123456789012345678901234567890123", "password") ==
+           ESP_ERR_INVALID_ARG);
+    assert(settings_update_begin());
+    assert(settings_save_wifi("home", "password") == ESP_ERR_INVALID_STATE);
+    settings_update_end();
+    store_error = ESP_FAIL;
+    assert(settings_save_wifi("home", "password") == ESP_FAIL);
+    assert(!settings_tick(false, 2000000));
+    store_error = 0;
+    assert(settings_save_wifi("home", "password") == ESP_OK);
+    assert(settings_save_wifi("another", "password") == ESP_ERR_INVALID_STATE);
+    assert(!settings_get()->ssid[0]);
+    assert(settings_tick(false, 2000000));
+    assert(settings_init() == ESP_OK && settings_trial());
+    assert(!strcmp(settings_get()->ssid, "home"));
+    assert(!settings_get()->tenant[0] && !settings_get()->client[0]);
+    assert(!settings_tick(true, 1000000) && !settings_trial());
+    assert(settings_init() == ESP_OK && !settings_trial());
+    assert(!strcmp(settings_get()->password, "password"));
+}
+
+static void test_serial_retry_and_rollback(void)
+{
+    assert(settings_save_wifi("home", "password") == ESP_OK);
+    assert(settings_init() == ESP_OK && settings_trial());
+    assert(settings_tick(false, 180000000));
+    assert(settings_init() == ESP_OK && !settings_trial());
+    assert(!strcmp(settings_get()->ssid, "home"));
+    assert(settings_save_wifi("open", "") == ESP_OK);
+    assert(settings_init() == ESP_OK && settings_trial());
+    assert(!settings_get()->password[0]);
+    assert(settings_init() == ESP_OK && !settings_trial());
+    assert(!strcmp(settings_get()->ssid, "home"));
+}
+
+static void test_field_validation(frame_settings_t original)
+{
+    frame_settings_t next = original;
     assert(settings_valid(&next, true));
     next.poll_seconds = 60;
     assert(!settings_valid(&next, true));
@@ -111,7 +158,11 @@ int main(void)
     assert(settings_valid(&next, true));
     next.password[63] = 'z';
     assert(!settings_valid(&next, true));
-    next = original;
+}
+
+static void test_form_and_redaction(frame_settings_t original)
+{
+    frame_settings_t next = original;
     cJSON *j = settings_json();
     assert(j && !cJSON_GetObjectItem(j, "password"));
     char *text = cJSON_PrintUnformatted(j);
@@ -128,36 +179,57 @@ int main(void)
     cJSON_ReplaceItemInObject(j, "tenant", cJSON_CreateString("invalid"));
     assert(!strcmp(settings_parse_error(j, &next), "tenant"));
     cJSON_Delete(j);
-    next = original;
+}
+
+static void test_noop_and_brightness(frame_settings_t original)
+{
+    frame_settings_t next = original;
     /* Trailing bytes are not changes; no-op saves never touch NVS. */
     next.ssid[sizeof(next.ssid) - 1] = 'x';
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == 0 && refreshes == 0 && !settings_tick(false, 3000000));
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_UNCHANGED);
+    assert(writes == 0);
+    assert(refreshes == 0);
+    assert(!settings_tick(false, 3000000));
     next = original;
     next.brightness = 20;
     store_error = ESP_FAIL;
     assert(settings_save(&next, &result) == ESP_FAIL);
-    assert(settings_brightness() == original.brightness && refreshes == 0);
+    assert(settings_brightness() == original.brightness);
+    assert(refreshes == 0);
     store_error = 0;
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_APPLIED);
-    assert(settings_brightness() == 20 && refreshes == 1 && !settings_tick(false, 3000000));
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_APPLIED);
+    assert(settings_brightness() == 20);
+    assert(refreshes == 1);
+    assert(!settings_tick(false, 3000000));
     unsigned saved_writes = writes;
-    assert(settings_save(&next, &result) == ESP_OK && result == SETTINGS_UNCHANGED);
-    assert(writes == saved_writes && refreshes == 1);
-    j = settings_json();
+    assert(settings_save(&next, &result) == ESP_OK);
+    assert(result == SETTINGS_UNCHANGED);
+    assert(writes == saved_writes);
+    assert(refreshes == 1);
+    cJSON *j = settings_json();
     assert(cJSON_GetObjectItem(j, "brightness")->valueint == 20);
     cJSON_Delete(j);
+}
+
+static void test_brightness_survives_restart(frame_settings_t original)
+{
     assert(settings_init() == ESP_OK && !settings_trial() && settings_brightness() == 20);
     assert(settings_save(&original, &result) == ESP_OK && result == SETTINGS_APPLIED);
     assert(settings_init() == ESP_OK);
-    next = original;
+}
+
+static void test_wifi_trial_restart(frame_settings_t original)
+{
+    frame_settings_t next = original;
     strcpy(next.ssid, "new-network");
     store_error = ESP_FAIL;
     assert(settings_save(&next, &result) == ESP_FAIL);
     assert(!settings_tick(false, 3000000));
     store_error = 0;
     assert(settings_save(&next, &result) == ESP_OK);
-    j = settings_json();
+    cJSON *j = settings_json();
     assert(cJSON_IsTrue(cJSON_GetObjectItem(j, "restart_pending")));
     cJSON_Delete(j);
     assert(settings_reset_auth() == ESP_ERR_INVALID_STATE);
@@ -173,6 +245,12 @@ int main(void)
     clock_now = 0;
     assert(!strcmp(settings_get()->ssid, "new-network"));
     assert(settings_save(&original, &result) == ESP_ERR_INVALID_STATE);
+}
+
+static void test_wifi_rollback_and_promotion(frame_settings_t original)
+{
+    frame_settings_t next = original;
+    strcpy(next.ssid, "new-network");
     assert(!settings_tick(false, 179999999));
     assert(settings_tick(false, 180000000));
     assert(settings_init() == ESP_OK && !settings_trial());
@@ -187,19 +265,28 @@ int main(void)
     assert(settings_init() == ESP_OK);
     assert(!settings_trial() && settings_brightness() == 20);
     assert(settings_init() == ESP_OK && settings_brightness() == 20);
+}
+
+static void test_auth_reset(void)
+{
     assert(erased == 0);
     assert(settings_reset_auth() == ESP_OK && erased == 0);
     token_error = ESP_FAIL;
     assert(settings_init() == ESP_FAIL && disk.reset_auth);
     token_error = 0;
     assert(settings_init() == ESP_OK && !disk.reset_auth && erased == 2);
-    next = *settings_get();
+    frame_settings_t next = *settings_get();
     strcpy(next.client, "33333333-3333-3333-3333-333333333333");
     assert(settings_save(&next, &result) == ESP_OK);
     assert(settings_init() == ESP_OK && erased == 3);
     assert(!settings_trial() && result == SETTINGS_RESTART);
     assert(settings_init() == ESP_OK && erased == 3);
     assert(!strcmp(settings_get()->client, next.client));
+}
+
+static void test_runtime_settings(void)
+{
+    frame_settings_t next = *settings_get();
     next.ntp[0] = 'a';
     next.poll_seconds = 15;
     next.stale_seconds = 90;
@@ -207,6 +294,11 @@ int main(void)
     assert(settings_tick(false, 2000000));
     assert(settings_init() == ESP_OK && !settings_trial());
     assert(settings_get()->poll_seconds == 15 && settings_get()->stale_seconds == 90);
+}
+
+static void test_identity_rollback(frame_settings_t original)
+{
+    frame_settings_t next = *settings_get();
     /* Password-only changes also trial; mixed identity changes reset on rollback. */
     strcpy(next.password, "new-password");
     strcpy(next.client, original.client);
@@ -217,6 +309,10 @@ int main(void)
     assert(settings_init() == ESP_OK && !settings_trial() && erased == 5);
     assert(settings_brightness() == 20);
     assert(strcmp(settings_get()->client, original.client));
+}
+
+static void test_update_exclusion_and_invalid_record(frame_settings_t original)
+{
     assert(settings_update_begin());
     assert(!settings_update_begin());
     assert(settings_save(settings_get(), &result) == ESP_ERR_INVALID_STATE);
@@ -227,6 +323,24 @@ int main(void)
     disk.version = 999;
     assert(settings_init() == ESP_OK && !settings_trial());
     assert(!strcmp(settings_get()->ssid, original.ssid));
+}
+
+int main(void)
+{
+    assert(settings_init() == ESP_OK);
+    frame_settings_t original = *settings_get();
+    test_field_validation(original);
+    test_form_and_redaction(original);
+    test_noop_and_brightness(original);
+    test_brightness_survives_restart(original);
+    test_wifi_trial_restart(original);
+    test_wifi_rollback_and_promotion(original);
+    test_auth_reset();
+    test_runtime_settings();
+    test_identity_rollback(original);
+    test_update_exclusion_and_invalid_record(original);
+    test_serial_provisioning();
+    test_serial_retry_and_rollback();
     puts("Settings validation, redaction, storage errors, trial rollback/promotion and "
          "authorization reset passed");
 }

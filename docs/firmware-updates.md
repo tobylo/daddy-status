@@ -82,8 +82,23 @@ It builds two profiles, signs the OTA-capable one with the **release key**,
 publishes a GitHub release with notes generated from the merged pull requests
 (categories in `.github/release.yml`), and deploys a web flasher to GitHub Pages
 from `web/index.html`. Tags containing a hyphen, such as `v1.2.0-rc1`, are marked
-as pre-releases. CI builds use empty credential defaults; settings are entered
-through the device's web page afterwards.
+as pre-releases. CI builds use empty credential defaults. After flashing, ESP Web
+Tools asks for your 2.4 GHz Wi-Fi SSID and password over USB using
+[Improv serial](https://www.improv-wifi.com/serial/). Enter the network name manually;
+network scanning is not implemented. Keep USB connected while the frame restarts
+and tests the credentials. Once connected and saved, **Visit device** opens its
+station IP address. Your computer must be on the same network. Enter the Microsoft
+tenant/client IDs through the device's Settings page, then sign in.
+
+A failed Wi-Fi trial reports an Improv connection error and rolls back after three
+minutes. Wait for the restart before trying again; reopen the serial provisioning
+dialog if necessary. No open setup access point is started. Serial provisioning
+remains available on configured devices to anyone with physical USB access.
+
+Older releases without Improv cannot be configured after a factory flash with
+empty defaults. Build locally with Wi-Fi credentials or a private recovery
+password, or use a release that includes this fix. Merging the fix does not replace
+previously published binaries; a new tagged release is required.
 
 | Asset | Profile | Signed | Use |
 | --- | --- | --- | --- |
