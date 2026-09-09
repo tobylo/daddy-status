@@ -104,11 +104,36 @@ signing key should therefore be set up and kept locally rather than in GitHub.
 The release key is the ECDSA signing key described above, with one copy on your
 machine and one in GitHub. Devices flashed from a release accept only images
 signed with it, so the only sources of updates are GitHub releases and local
-builds signed with the same key. Rotation is possible without USB: ship one
-release whose embedded public key is the new one but which is signed with the
-old key, then switch. Because rotation depends on the key being compiled into
-the app, hardware Secure Boot must stay off in this model; a fused key cannot
-be rotated and must never live in CI.
+builds signed with the same key. Because the verification key is compiled into
+the app rather than fused, hardware Secure Boot must stay off in this model; a
+fused key cannot be rotated and must never live in CI.
+
+**Key rotation is a manual, local procedure**, not a tagged release: the
+workflow refuses any build whose signing key does not match the committed
+public key, and a bridge image needs the opposite combination. To rotate:
+
+1. Generate the new key and extract its public key to a separate file, without
+   touching the committed one yet.
+2. Build a bridge image that embeds the **new** public key but is not signed
+   at build time, then sign it with the **old** key and verify it:
+
+   ```sh
+   idf.py -B build-bridge -D SDKCONFIG=build-bridge/sdkconfig \
+     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame;sdkconfig.ota' \
+     -D CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=n \
+     -D CONFIG_SECURE_BOOT_VERIFICATION_KEY=new_verification_key.bin build
+   espsecure sign-data --version 1 --keyfile old_signing_key.pem \
+     --output bridge.bin build-bridge/daddy-status.bin
+   espsecure verify-signature --version 1 --keyfile signature_verification_key.bin bridge.bin
+   ```
+
+3. Upload `bridge.bin` through the OTA page of every device and wait for boot
+   confirmation. Each device now trusts the new key only.
+4. Replace the committed `signature_verification_key.bin` with the new public
+   key, update `SIGNING_KEY_PEM`, and tag the next release as usual.
+
+Devices that miss the bridge can only be recovered with a factory image over
+USB, which erases their settings.
 
 One-time setup, for this repository or for a fork that wants its own key:
 
