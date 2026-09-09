@@ -17,7 +17,9 @@ encryption, eFuse anti-rollback, or protection from physical flash replacement.
 
 The old single-app table cannot gain OTA support through an application update.
 Use USB once to flash the new bootloader, partition table, signed application,
-and initial OTA metadata together. Do this before closing the frame again.
+and initial OTA metadata together. Do this before closing the frame again. The
+`ota-frame-factory` image from a [tagged release](#tagged-releases-and-the-web-flasher)
+is the same set merged into one file, at the cost of erasing saved settings.
 
 The 4 MB layout has two 1,984 KiB app slots (`ota_0` at `0x10000`, `ota_1` at
 `0x200000`) and OTA metadata at `0x3f0000`. NVS remains at `0x9000`, size `0x6000`,
@@ -44,8 +46,8 @@ generated configuration. The profile uses IDF's ECDSA V1 signed-app scheme for
 classic ESP32 compatibility, without enabling hardware Secure Boot.
 
 Back up the private key securely outside the repository and reuse it for every
-release to this frame. `*.pem` is ignored. Never use the disposable CI key on a
-real device. Losing the key requires USB reprovisioning; do not generate another
+release to this frame. `*.pem` is ignored. Never use the disposable CI key from
+pull-request builds on a real device. Losing the key requires USB reprovisioning; do not generate another
 key over the existing one. The default build has the dual-slot layout and
 rollback enabled but rejects all uploads until signed OTA is configured.
 
@@ -72,6 +74,107 @@ interrupted transfers, and failed verification leave the selected boot image
 unchanged. A successful response means the image was verified and selected;
 the device then restarts even if the response could not reach the client.
 Check the device before retrying an ambiguous network failure.
+
+## Tagged releases and the web flasher
+
+Pushing a `v*` tag that is reachable from `master` runs `.github/workflows/release.yml`.
+It builds two profiles, signs the OTA-capable one with the **release key**,
+publishes a GitHub release with notes generated from the merged pull requests
+(categories in `.github/release.yml`), and deploys a web flasher to GitHub Pages
+from `web/index.html`. Tags containing a hyphen, such as `v1.2.0-rc1`, are marked
+as pre-releases. CI builds use empty credential defaults; settings are entered
+through the device's web page afterwards.
+
+| Asset | Profile | Signed | Use |
+| --- | --- | --- | --- |
+| `daddy-status-<tag>-factory.bin` | `sdkconfig.defaults` | no | Merged image for USB or web flashing at `0x0`. No OTA endpoint; LED GPIO 25. |
+| `daddy-status-<tag>-ota-frame-factory.bin` | frame + ota | release key | Merged image for USB or web flashing at `0x0`. Signed OTA and rollback; LED GPIO 13. |
+| `daddy-status-<tag>-ota-frame.bin` | frame + ota | release key | App image for the OTA page on a device running an `ota-frame` image. |
+| `signature_verification_key.bin`, `*.elf`, `SHA256SUMS` | | | Public key for `espsecure verify-signature`, backtrace symbols, checksums. |
+
+Merged factory images pad the gaps between bootloader, partition table, app and
+OTA data with `0xFF`, so flashing one **erases saved settings and Microsoft
+sign-in**. App images uploaded through the OTA page keep them. The
+[encrypted profile](encrypted-storage.md) is not released at all: its first
+boot permanently programs eFuses, its devices have no USB fallback, and its
+signing key should therefore be set up and kept locally rather than in GitHub.
+
+### Release key model
+
+The release key is the ECDSA signing key described above, with one copy on your
+machine and one in GitHub. Devices flashed from a release accept only images
+signed with it, so the only sources of updates are GitHub releases and local
+builds signed with the same key. Because the verification key is compiled into
+the app rather than fused, hardware Secure Boot must stay off in this model; a
+fused key cannot be rotated and must never live in CI.
+
+**Key rotation is a manual, local procedure**, not a tagged release: the
+workflow refuses any build whose signing key does not match the committed
+public key, and a bridge image needs the opposite combination. To rotate:
+
+1. Generate the new key and extract its public key to a separate file, without
+   touching the committed one yet.
+2. Build a bridge image that embeds the **new** public key but is not signed
+   at build time, then sign it with the **old** key and verify it:
+
+   ```sh
+   idf.py -B build-bridge -D SDKCONFIG=build-bridge/sdkconfig \
+     -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame;sdkconfig.ota' \
+     -D CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=n \
+     -D CONFIG_SECURE_BOOT_VERIFICATION_KEY=new_verification_key.bin build
+   espsecure sign-data --version 1 --keyfile old_signing_key.pem \
+     --output bridge.bin build-bridge/daddy-status.bin
+   espsecure verify-signature --version 1 --keyfile signature_verification_key.bin bridge.bin
+   ```
+
+3. Upload `bridge.bin` through the OTA page of every device and wait for boot
+   confirmation. Each device now trusts the new key only.
+4. Replace the committed `signature_verification_key.bin` with the new public
+   key, update `SIGNING_KEY_PEM`, and tag the next release as usual.
+
+Devices that miss the bridge can only be recovered with a factory image over
+USB, which erases their settings.
+
+One-time setup, for this repository or for a fork that wants its own key:
+
+1. Generate the key as shown above and back it up outside the repository.
+2. Extract the public key and commit it. It is not secret; every signed image
+   already contains it.
+
+   ```sh
+   espsecure extract-public-key --version 1 --keyfile secure_boot_signing_key.pem \
+     signature_verification_key.bin
+   ```
+
+3. In the repository settings create an environment named `release`, restrict
+   its deployment branches and tags to `v*`, and add a secret `SIGNING_KEY_PEM`
+   containing the PEM file. Only the tag-triggered build job runs in that
+   environment; pull-request builds keep using a disposable key that never
+   reaches hardware.
+4. Under Pages, set the source to **GitHub Actions**.
+
+The workflow refuses to run if the tag is not on `master`, if the secret or the
+committed public key is missing, or if the two do not match. The last check
+prevents publishing images that would strand every device on its next update.
+Each signed image is verified against the committed public key before upload.
+
+To publish a release:
+
+```sh
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+```
+
+### Web flasher
+
+The Pages site offers the two factory images through
+[ESP Web Tools](https://esp-web-tools.esphome.io/). It needs a Chromium browser
+with Web Serial, a USB connection to a classic ESP32, and it erases the flash.
+Users who prefer the command line can flash the same files with esptool:
+
+```sh
+esptool --chip esp32 -p /dev/ttyUSB0 write-flash 0x0 daddy-status-v1.0.0-ota-frame-factory.bin
+```
 
 ## Rollback and acceptance
 

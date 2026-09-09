@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daddy Status web flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js"
+          integrity="sha384-9XfyvAabgkISlB/Xb3OpshGKpZx0TOt5Mmu78SeiNU3so/p4o2s9m66vy6Utdnom"
+          crossorigin="anonymous"></script>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.6rem; }
+    section { border: 1px solid #ccc; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
+    code { background: #f2f2f2; padding: 0 .25rem; }
+    .note { color: #555; font-size: .95rem; }
+  </style>
+</head>
+<body>
+  <h1>Daddy Status web flasher</h1>
+  <p>Release <strong>__TAG__</strong> for a classic ESP32 with 4&nbsp;MB flash.
+    Connect the board over USB and use a Chromium browser such as Chrome or Edge;
+    Web Serial is not available in Firefox or Safari.
+    Flashing a factory image <strong>erases saved settings and Microsoft sign-in</strong>.</p>
+
+  <section>
+    <h2>Factory image, no wireless updates</h2>
+    <p>Default configuration: LED data on GPIO&nbsp;25, no OTA endpoint.
+      Later updates require the USB cable again.</p>
+    <esp-web-install-button manifest="manifest-factory.json"></esp-web-install-button>
+  </section>
+
+  <section>
+    <h2>Frame image with signed wireless updates</h2>
+    <p>Picture-frame wiring: LED data on GPIO&nbsp;13, 10&nbsp;second presence polling.
+      Enables the OTA upload page with signature verification and boot rollback.
+      The device will only accept future images signed with this project's release key,
+      such as the <code>ota-frame</code> app image from each GitHub release.</p>
+    <esp-web-install-button manifest="manifest-ota-frame-factory.json"></esp-web-install-button>
+  </section>
+
+  <p class="note">The encrypted storage profile is not offered here on purpose: its first boot
+    permanently programs security eFuses and must follow the provisioning guide.
+    After flashing, configure Wi-Fi and the Microsoft app registration through the device's
+    own web page as described in the
+    <a href="https://github.com/__REPO__#readme">README</a>. Checksums and the release
+    public key are on the <a href="https://github.com/__REPO__/releases/tag/__TAG__">release page</a>.</p>
+</body>
+</html>
