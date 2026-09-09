@@ -42,7 +42,9 @@ static uint8_t save_wifi(const char *ssid, const char *password)
 
 void improv_serial_init(void)
 {
-    ESP_ERROR_CHECK(uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 512, 0, 0, NULL, 0));
+    /* Board startup may already have installed the console driver. */
+    if (!uart_is_driver_installed(CONFIG_ESP_CONSOLE_UART_NUM))
+        ESP_ERROR_CHECK(uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 512, 0, 0, NULL, 0));
     improv_io_t io = {.write = serial_write,
                       .save_wifi = save_wifi,
                       .version = esp_app_get_description()->version};

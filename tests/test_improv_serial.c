@@ -5,7 +5,8 @@
 #include "../main/improv_serial.c"
 #include <string.h>
 
-static bool online, trial;
+static bool online, trial, driver_installed;
+static unsigned driver_installs;
 static unsigned writes, reads, drained;
 static esp_err_t save_result;
 static esp_netif_t netif;
@@ -19,14 +20,24 @@ const esp_app_desc_t *esp_app_get_description(void)
     return &app;
 }
 
+bool uart_is_driver_installed(int port)
+{
+    assert(port == CONFIG_ESP_CONSOLE_UART_NUM);
+    return driver_installed;
+}
+
 esp_err_t uart_driver_install(int port, int rx, int tx, int queue_size, void *queue, int flags)
 {
     assert(port == 0 && rx >= 265 && tx == 0);
+    assert(!driver_installed);
+    driver_installed = true;
+    ++driver_installs;
     return ESP_OK;
 }
 
 int uart_read_bytes(int port, void *data, uint32_t length, TickType_t wait)
 {
+    assert(driver_installed);
     ++reads;
     assert(length == 1 && wait == 0);
     if (input_at == input_length)
@@ -37,6 +48,7 @@ int uart_read_bytes(int port, void *data, uint32_t length, TickType_t wait)
 
 int uart_write_bytes(int port, const void *data, size_t length)
 {
+    assert(driver_installed);
     const uint8_t *bytes = data;
     assert(bytes[0] == '\n' && bytes[length - 1] == '\n');
     assert(!memcmp(bytes + 1, "IMPROV", 6));
@@ -84,6 +96,8 @@ esp_err_t esp_netif_get_ip_info(esp_netif_t *n, esp_netif_ip_info_t *ip)
 
 static void boot(bool trying)
 {
+    driver_installed = false;
+    driver_installs = 0;
     restarting = false; /* BSS is cleared on a real restart. */
     trial = trying;
     station_address = 1234;
@@ -159,8 +173,30 @@ static void test_invalid_address_and_unrelated_restart(void)
     assert(service.state == 3 && writes == 0 && drained == 1);
 }
 
+static void test_driver_ownership(void)
+{
+    boot(false);
+    assert(driver_installed);
+    assert(driver_installs == 1);
+    assert(service.state == 2);
+
+    /* Simulate board startup having installed the driver before Improv starts. */
+    driver_installs = 0;
+    trial = true;
+    improv_serial_init();
+    assert(driver_installs == 0);
+    assert(service.state == 3);
+    online = true;
+    trial = false;
+    improv_serial_tick(100, false);
+    assert(service.state == 4);
+    assert(writes == 2);
+    assert(reads == 1);
+}
+
 int main(void)
 {
+    test_driver_ownership();
     test_trial_lifecycle();
     test_serial_dispatch();
     test_pending_restart();
