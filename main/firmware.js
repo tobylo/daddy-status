@@ -18,6 +18,7 @@ let status,
     page = 1,
     loading = false;
 let pollInFlight = false;
+let knownMaxSize = 0;
 
 function message(text) {
     el('firmware-message').textContent = text;
@@ -85,6 +86,7 @@ async function readStatus() {
         if (!current.control_token || !readinessMessages[current.readiness])
             throw Error('Invalid firmware status.');
         status = current;
+        knownMaxSize = current.max_size;
         el('firmware-version').textContent = current.version;
         el('firmware-readiness').textContent = readinessMessages[current.readiness];
         reconcileBoot(current);
@@ -122,7 +124,7 @@ function selection() {
 }
 
 function renderReleases() {
-    choices = releaseChoices(releases, el('firmware-prereleases').checked, status?.max_size || 0);
+    choices = releaseChoices(releases, el('firmware-prereleases').checked, knownMaxSize);
     el('firmware-release').replaceChildren();
     choices.forEach((release, index) => {
         const option = document.createElement('option');

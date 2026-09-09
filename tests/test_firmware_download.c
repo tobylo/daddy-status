@@ -57,7 +57,7 @@ esp_err_t esp_http_client_open(esp_http_client_handle_t client, int length)
     assert(reserved);
     return fail_open ? ESP_FAIL : ESP_OK;
 }
-long long esp_http_client_fetch_headers(esp_http_client_handle_t client)
+int64_t esp_http_client_fetch_headers(esp_http_client_handle_t client)
 {
     if (redirect_url && opened == 1) {
         esp_http_client_event_t event = {.event_id = HTTP_EVENT_ON_HEADER,
@@ -72,7 +72,7 @@ int esp_http_client_get_status_code(esp_http_client_handle_t client)
 {
     return redirect_url && opened == 1 ? 302 : remote_status;
 }
-long long esp_http_client_get_content_length(esp_http_client_handle_t client)
+int64_t esp_http_client_get_content_length(esp_http_client_handle_t client)
 {
     return oversized ? 8193 : 5000;
 }

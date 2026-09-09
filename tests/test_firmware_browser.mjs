@@ -318,6 +318,32 @@ async function releaseInstallAndFallback() {
     assert.match(e['firmware-releases-message'].textContent, /Local upload remains available/);
 }
 
+async function releasesSurviveStatusOutage() {
+    const { elements: e, model: m, run } = harness();
+    m.releaseList = [release('v2'), release('v3-rc1', true)];
+    await run('loadReleases(true)');
+    assert.equal(e['firmware-release'].children.length, 1);
+    m.offline = true;
+    await run('poll()');
+    e['firmware-prereleases'].checked = true;
+    e['firmware-prereleases'].events.change();
+    assert.equal(e['firmware-release'].children.length, 2);
+    assert.equal(e['firmware-install'].disabled, true);
+    e['firmware-prereleases'].checked = false;
+    e['firmware-prereleases'].events.change();
+    assert.equal(e['firmware-release'].children.length, 1);
+    m.offline = false;
+    await run('poll()');
+    assert.equal(e['firmware-install'].disabled, false);
+    // A later valid status replaces the cache, including a zero-sized slot.
+    m.state.max_size = 0;
+    await run('poll()');
+    m.offline = true;
+    await run('poll()');
+    e['firmware-prereleases'].events.change();
+    assert.equal(e['firmware-release'].children.length, 0);
+}
+
 releaseFiltering();
 await boundedDownload();
 await requestContracts();
@@ -326,6 +352,7 @@ await localUpdateAndBoot();
 await ambiguousAndRollback();
 await rejectionAndValidation();
 await releaseInstallAndFallback();
+await releasesSurviveStatusOutage();
 console.log(
     'Firmware browser filtering, bounded transfers, authorization, boot confirmation, rollback and failures passed',
 );
