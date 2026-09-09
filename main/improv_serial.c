@@ -70,12 +70,13 @@ void improv_serial_tick(int64_t now, bool reboot_due)
             break;
         improv_feed(&service, byte, now);
     }
-    if (restarting)
-        return; /* The old station address must not complete a new trial. */
-    char url[48] = {0};
-    station_url(url, sizeof(url));
-    bool trial = settings_trial();
-    improv_poll(&service, url, trial, reboot_due && trial);
+    /* The old station address must not complete a new trial. */
+    if (!restarting) {
+        char url[48] = {0};
+        station_url(url, sizeof(url));
+        bool trial = settings_trial();
+        improv_poll(&service, url, trial, reboot_due && trial);
+    }
     if (reboot_due)
         uart_wait_tx_done(CONFIG_ESP_CONSOLE_UART_NUM, task_ticks_ms(1000));
 }

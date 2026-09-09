@@ -136,6 +136,7 @@ static void test_pending_restart(void)
     service.state = 3;
     improv_serial_tick(100, true);
     assert(service.state == 3 && writes == 0);
+    assert(drained == 1);
 }
 
 static void test_invalid_address_and_unrelated_restart(void)
