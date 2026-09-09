@@ -127,7 +127,7 @@ jobs:
           cat SHA256SUMS
           {
             echo "Firmware built by CI from tag \`$TAG\`. Flash a factory image with the [web flasher]($PAGES_URL)"
-            echo "or with esptool at offset 0x0; upload an app image through the device's OTA page."
+            echo "or with esptool at offset 0x0. In the frame dashboard, open Firmware update to pick a release or upload a signed app image."
             echo
             echo "| Asset | Profile | Signed | Use |"
             echo "| --- | --- | --- | --- |"

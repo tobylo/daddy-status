@@ -264,7 +264,8 @@ encrypted; do not expose it to untrusted networks.
 Signed OTA uploads and automatic boot rollback are available with the opt-in
 `sdkconfig.ota` profile. A one-time USB flash installs the dual-slot partition
 layout; subsequent signed application images can be uploaded over Wi-Fi without
-opening the frame. Default builds reject uploads. Follow the
+opening the frame. The embedded dashboard supports local binary upload and a
+GitHub release picker, with progress and boot confirmation. Default builds reject uploads. Follow the
 [provisioning, upload, and rollback guide](docs/firmware-updates.md), including
 signing-key backup and the first-boot health checks. Pushing a `v*` tag on
 `master` publishes a GitHub release with factory and signed OTA images plus

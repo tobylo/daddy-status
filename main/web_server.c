@@ -5,6 +5,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "firmware_update.h"
+#include "firmware_web.h"
 #include "freertos/FreeRTOS.h"
 #include "protocol.h"
 #include "sdkconfig.h"
@@ -58,10 +59,10 @@ static void headers(httpd_req_t *req)
 {
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
-    httpd_resp_set_hdr(
-        req, "Content-Security-Policy",
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    httpd_resp_set_hdr(req, "Content-Security-Policy",
+                       "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; "
+                       "connect-src 'self' https://api.github.com; frame-ancestors 'none'; "
+                       "base-uri 'none'; form-action 'none'");
     httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
 }
 
@@ -89,10 +90,11 @@ static cJSON *auth_json(void)
     }
     const char *names[] = {"waiting", "code", "signed_in", "retrying"};
     cJSON *json = cJSON_CreateObject();
-    if (!json || !cJSON_AddStringToObject(json, "state", names[event]) ||
-        !cJSON_AddStringToObject(json, "user_code", code) ||
-        !cJSON_AddNumberToObject(json, "expires_in",
-                                 event == AUTH_CODE_READY ? (remaining + 999999) / 1000000 : 0)) {
+    int64_t seconds = event == AUTH_CODE_READY ? (remaining + 999999) / 1000000 : 0;
+    bool complete = json && cJSON_AddStringToObject(json, "state", names[event]) &&
+                    cJSON_AddStringToObject(json, "user_code", code) &&
+                    cJSON_AddNumberToObject(json, "expires_in", seconds);
+    if (!complete) {
         cJSON_Delete(json);
         return NULL;
     }
@@ -393,8 +395,10 @@ static esp_err_t settings_error(httpd_req_t *req, const char *status, const char
 {
     httpd_resp_set_status(req, status);
     cJSON *json = cJSON_CreateObject();
-    if (!json || !cJSON_AddStringToObject(json, "error", error) ||
-        (field && !cJSON_AddStringToObject(json, "field", field))) {
+    bool complete = json && cJSON_AddStringToObject(json, "error", error);
+    if (field)
+        complete = complete && cJSON_AddStringToObject(json, "field", field);
+    if (!complete) {
         cJSON_Delete(json);
         json = NULL;
     }
@@ -446,6 +450,40 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     return httpd_resp_send(req, responses[result], HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t firmware_get(httpd_req_t *req)
+{
+    cJSON *json = firmware_status_json();
+    if (json && !cJSON_AddStringToObject(json, "control_token", control_token)) {
+        cJSON_Delete(json);
+        json = NULL;
+    }
+    return send_json(req, json);
+}
+
+static esp_err_t firmware_asset_post(httpd_req_t *req)
+{
+    char body[21];
+    response_buffer_t buffer = {.data = body, .capacity = sizeof(body)};
+    esp_err_t result;
+    if (!read_authorized_body(req, &buffer, "Invalid release asset ID", &result))
+        return result;
+    if (strlen(body) != buffer.length)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid release asset ID");
+    return firmware_download(req, body);
+}
+
+extern const char dashboard_script[] __asm__("_binary_dashboard_js_start");
+extern const char firmware_script[] __asm__("_binary_firmware_js_start");
+extern const char transfer_script[] __asm__("_binary_firmware_transfer_js_start");
+extern const char releases_script[] __asm__("_binary_firmware_releases_js_start");
+
+static esp_err_t script_get(httpd_req_t *req)
+{
+    headers(req);
+    httpd_resp_set_type(req, "text/javascript; charset=utf-8");
+    return httpd_resp_send(req, req->user_ctx, HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t firmware_post(httpd_req_t *req)
 {
     headers(req);
@@ -463,6 +501,7 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 8192;
     config.max_open_sockets = 3;
+    config.max_uri_handlers = 13;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
@@ -476,6 +515,24 @@ esp_err_t web_server_start(void)
         {.uri = "/api/status", .method = HTTP_GET, .handler = dashboard_get},
         {.uri = "/api/settings", .method = HTTP_GET, .handler = settings_get_handler},
         {.uri = "/api/settings", .method = HTTP_POST, .handler = settings_post_handler},
+        {.uri = "/dashboard.js",
+         .method = HTTP_GET,
+         .handler = script_get,
+         .user_ctx = (void *)dashboard_script},
+        {.uri = "/firmware.js",
+         .method = HTTP_GET,
+         .handler = script_get,
+         .user_ctx = (void *)firmware_script},
+        {.uri = "/firmware_transfer.js",
+         .method = HTTP_GET,
+         .handler = script_get,
+         .user_ctx = (void *)transfer_script},
+        {.uri = "/firmware_releases.js",
+         .method = HTTP_GET,
+         .handler = script_get,
+         .user_ctx = (void *)releases_script},
+        {.uri = "/api/firmware", .method = HTTP_GET, .handler = firmware_get},
+        {.uri = "/api/firmware/asset", .method = HTTP_POST, .handler = firmware_asset_post},
         {.uri = "/api/firmware", .method = HTTP_POST, .handler = firmware_post},
         {.uri = "/api/led-test", .method = HTTP_POST, .handler = led_test_post},
     };

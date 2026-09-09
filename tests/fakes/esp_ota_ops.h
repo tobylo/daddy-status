@@ -4,12 +4,14 @@
 #include <stddef.h>
 typedef struct {
     size_t size;
+    unsigned address;
 } esp_partition_t;
 typedef unsigned esp_ota_handle_t;
 typedef enum {
     ESP_OTA_IMG_NEW,
     ESP_OTA_IMG_PENDING_VERIFY,
-    ESP_OTA_IMG_VALID
+    ESP_OTA_IMG_UNDEFINED = -1,
+    ESP_OTA_IMG_VALID = 2
 } esp_ota_img_states_t;
 const esp_partition_t *esp_ota_get_running_partition(void);
 const esp_partition_t *esp_ota_get_next_update_partition(const esp_partition_t *);

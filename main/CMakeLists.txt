@@ -1,7 +1,8 @@
 idf_component_register(
-    SRCS "improv.c" "improv_serial.c" "storage.c" "firmware_update.c" "settings.c" "main.c" "web_server.c" "ledcontrol.c" "wifi.c" "graph_client.c" "protocol.c"
+    SRCS "firmware_status.c" "firmware_download.c" "improv.c" "improv_serial.c" "storage.c"
+         "firmware_update.c" "settings.c" "main.c" "web_server.c" "ledcontrol.c" "wifi.c" "graph_client.c" "protocol.c"
          "auth_client.c" "http_transport.c" "token_storage.c" "presence.c" "app_state.c" "led_frame.c" "diagnostics.c"
-    EMBED_TXTFILES "auth.html"
+    EMBED_TXTFILES "auth.html" "dashboard.js" "firmware.js" "firmware_transfer.js" "firmware_releases.js"
     INCLUDE_DIRS "include"
     REQUIRES esp_http_server
     PRIV_REQUIRES esp_wifi esp_event esp_netif nvs_flash esp_http_client

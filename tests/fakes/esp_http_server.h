@@ -6,14 +6,16 @@
 typedef void *httpd_handle_t;
 typedef struct {
     size_t content_len;
+    void *user_ctx;
 } httpd_req_t;
 typedef struct {
     const char *uri;
+    void *user_ctx;
     int method;
     esp_err_t (*handler)(httpd_req_t *);
 } httpd_uri_t;
 typedef struct {
-    int max_open_sockets, stack_size;
+    int max_open_sockets, stack_size, max_uri_handlers;
     bool lru_purge_enable;
     int recv_wait_timeout, send_wait_timeout;
 } httpd_config_t;
@@ -36,3 +38,5 @@ esp_err_t httpd_resp_send_err(httpd_req_t *, int, const char *);
 
 esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *, const char *, char *, size_t);
 int httpd_req_recv(httpd_req_t *, char *, size_t);
+
+esp_err_t httpd_resp_send_chunk(httpd_req_t *, const char *, int);

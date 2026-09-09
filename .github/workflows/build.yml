@@ -58,3 +58,4 @@ jobs:
         with:
           node-version: '24'
       - run: node tests/test_browser.mjs
+      - run: node tests/test_firmware_browser.mjs

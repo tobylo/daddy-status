@@ -5,7 +5,7 @@
 <title>Daddy Status · Your frame</title>
 <style>
 :root{font:16px/1.5 system-ui,sans-serif;color:#162532;background:#f2f4f6}body{margin:0;padding:24px}main{max-width:640px;margin:4vh auto}header{display:block}header{margin-bottom:24px}h1{font-size:30px;margin:0}h2{font-size:19px;margin-top:0}.card{background:white;padding:24px;border-radius:16px;margin:16px 0;box-shadow:0 4px 20px #1625320a}.eyebrow{color:#526272;margin:0 0 4px}.status{margin-bottom:0}dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;margin:0}dt{color:#526272}dd{margin:0;text-align:right;overflow-wrap:anywhere}code{display:block;font-size:30px;letter-spacing:3px;margin:20px 0;font-weight:bold}a,button{display:inline-block;background:#145cbd;color:white;padding:10px 16px;border:0;border-radius:8px;font:inherit;text-decoration:none;cursor:pointer}button{background:#eaf0f7;color:#162532}button:hover{background:#d9e5f4}button:disabled{opacity:.45;cursor:wait}.buttons{display:flex;gap:8px;flex-wrap:wrap}small,.muted{color:#526272}small{display:block;margin-top:16px}[hidden]{display:none}@media(max-width:420px){body{padding:14px}.card{padding:18px}dl{gap:10px}main{margin:2vh auto}}
-label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}.field-error{color:#a51d24;margin:4px 0}input[aria-invalid=true]{border-color:#a51d24}.history{margin:0;padding-left:20px}.history li{margin:5px 0;color:#526272}
+label{display:block;margin:14px 0 4px}select{max-width:100%;padding:10px;margin-bottom:12px}progress{width:100%;margin-top:16px}input{box-sizing:border-box;width:100%;padding:10px;border:1px solid #a8b6c4;border-radius:6px;font:inherit}input[type=checkbox]{width:auto}summary{cursor:pointer;font-weight:bold}form button{margin-top:16px}.field-error{color:#a51d24;margin:4px 0}input[aria-invalid=true]{border-color:#a51d24}.history{margin:0;padding-left:20px}.history li{margin:5px 0;color:#526272}
 </style>
 <main>
 <header><p class="eyebrow">Your picture frame</p><h1>Daddy Status</h1><p id="status" class="status" role="status" aria-live="polite">Connecting to your frame…</p></header>
@@ -35,6 +35,21 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 <section class="card"><h2>Device</h2><dl>
 <dt>Polling interval</dt><dd id="poll">—</dd><dt>LED data pin</dt><dd id="gpio">—</dd><dt>Brightness</dt><dd id="brightness">—</dd><dt>Uptime</dt><dd id="uptime">—</dd>
 </dl></section>
+<section class="card"><h2>Firmware update</h2>
+<dl><dt>Installed version</dt><dd id="firmware-version">—</dd></dl>
+<p id="firmware-readiness" role="status">Checking update support…</p>
+<p class="muted">Use a signed application image matching this frame’s hardware and signing key. Custom or encrypted builds may need a local image. Factory images must be installed over USB.</p>
+<label for="firmware-file">Local OTA binary</label><input id="firmware-file" type="file" accept=".bin,application/octet-stream" disabled>
+<button id="firmware-upload" disabled>Upload and install</button>
+<h3>GitHub releases</h3>
+<label><input id="firmware-prereleases" type="checkbox"> Include prereleases</label>
+<div class="buttons"><button id="firmware-refresh">Load releases</button><button id="firmware-more" hidden>Load older releases</button></div>
+<p id="firmware-releases-message" role="status">Load published releases, or upload a file above.</p>
+<label for="firmware-release">Version to install</label><select id="firmware-release"></select>
+<div class="buttons"><a id="firmware-notes" target="_blank" rel="noopener noreferrer" hidden>Release notes ↗</a><button id="firmware-install" disabled>Install selected release</button></div>
+<progress id="firmware-progress" max="100" value="0" aria-label="Firmware transfer progress" hidden></progress>
+<p id="firmware-message" role="status" aria-live="polite"></p>
+</section>
 <section class="card"><details><summary>Settings and recovery</summary>
 <p class="muted">Unchanged saves are skipped and brightness applies immediately. Other changes restart the frame. Wi-Fi changes try the new connection for three minutes and restore the previous settings if it fails. Keep this page’s address or reconnect to the setup network if needed.</p>
 <form id="settings-form">
@@ -67,173 +82,6 @@ label{display:block;margin:14px 0 4px}input{box-sizing:border-box;width:100%;pad
 </details></section>
 <noscript>Enable JavaScript to see live status and the sign-in code.</noscript>
 </main>
-<script>
-const el=id=>document.getElementById(id);
-const statusText=el('status'),login=el('login'),code=el('code'),expiry=el('expiry');
-const buttons=Array.from(document.querySelectorAll('[data-mode]'));
-let deadline=0,controlToken='',testBusy=false,testDeadline=0,settingsLoaded=false,settingsBusy=false,restarting=false,settingsToken='',restartToken='',trialActive=false,trialDeadline=0,settingsAvailable=false;
-const settingFields=['ssid','tenant','client','ntp','poll_seconds','stale_seconds','brightness'];
-const errors={network:'Cannot reach Microsoft. Retrying automatically.',clock:'Waiting for clock synchronization before contacting Microsoft.',auth:'Microsoft sign-in needs attention. Retrying automatically.',auth_config:'Check the Microsoft app registration and tenant settings.',auth_denied:'Microsoft sign-in was declined. Waiting for another attempt.',auth_expired:'The sign-in code expired. Waiting for another attempt.',storage:'Cannot save or read the device’s login. Check device storage.',permission:'Signed in, but Microsoft denied access to presence. Check Presence.Read consent.',throttled:'Microsoft asked the frame to wait. Retrying after the required delay.',response:'Microsoft returned an unexpected response. Retrying automatically.'};
-const displays={connecting:'Blinking blue',authenticating:'Blinking yellow',unknown:'Blinking blue',green:'Green',yellow:'One yellow LED',red:'Blinking red',rainbow:'Rainbow',configuration:'Magenta'};
-const wifiEvents={disconnected:'Disconnected',retry_started:'Retry started',retry_waiting:'Waiting before retry',timeout:'Connection timed out',connected:'Connected',recovery_ap_enabled:'Recovery network enabled',recovery_ap_disabled:'Recovery network disabled'};
-function clearCode(){login.hidden=true;code.textContent='';deadline=0;}
-function enableTests(){
- buttons.forEach(button=>button.disabled=!controlToken||testBusy||restarting);
- el('save-settings').disabled=el('reset-auth').disabled=!controlToken||!settingsLoaded||!settingsAvailable||settingsBusy||restarting||trialActive;
-}
-async function update(){
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
-  try{
-    const response=await fetch('/api/status',{cache:'no-store',signal:controller.signal});
-    if(!response.ok)throw new Error('Unavailable');
-    const data=await response.json();
-    clearCode();
-    controlToken=data.control_token||'';
-    el('activity').textContent=data.activity||'Not received yet';
-    el('freshness').textContent=data.fresh?'Current':'Unavailable or stale';
-    el('age').textContent=data.age_seconds>=0?data.age_seconds+' seconds ago':'Not received yet';
-    el('display').textContent=displays[data.display]||'Unknown';
-    el('connection').textContent=data.connected?'Connected':'Disconnected';
-    el('signal').textContent=data.signal_known?data.signal_rssi+' dBm':'Unknown';
-    el('disconnect').textContent=data.last_disconnect_reason>=0?data.last_disconnect_reason_name+' ('+data.last_disconnect_reason+')':'None recorded';
-    el('retries').textContent=data.retry_count;
-    el('next-retry').textContent=data.next_retry_seconds>0?'In '+data.next_retry_seconds+' seconds':'Not scheduled';
-    el('recovery-ap').textContent=data.recovery_ap?'Enabled':'Disabled';
-    const history=el('wifi-history');history.textContent='';
-    (data.wifi_history||[]).forEach(event=>{
-      const item=document.createElement('li');item.textContent=(wifiEvents[event.event]||'Wi-Fi event')+' · '+event.age_seconds+' seconds ago';
-      if(event.event==='disconnected')item.textContent+=' · '+event.reason_name+' ('+event.reason+') · '+event.rssi+' dBm';
-      history.appendChild(item);
-    });
-    if(!history.children.length)history.textContent='No Wi-Fi events recorded';
-    el('account').textContent=data.state==='signed_in'?'Signed in':data.state==='code'?'Sign-in required':'Waiting';
-    el('poll').textContent=data.poll_seconds+' seconds';
-    el('gpio').textContent='GPIO '+data.led_gpio;
-    el('brightness').textContent=data.brightness_percent+'%';
-    el('uptime').textContent=Math.floor(data.uptime_seconds/60)+' minutes';
-    testDeadline=data.test_seconds>0?Date.now()+data.test_seconds*1000:0;
-    if(!testBusy)el('test-status').textContent=testDeadline?'LED test active; normal status returns automatically.':'Normal Teams status';
-    statusText.textContent=!data.connected?'The frame is reconnecting to Wi-Fi.':errors[data.error]||(data.service==='configuration'?'Complete the Microsoft settings below.':data.service==='clock'?'Waiting for clock synchronization…':data.fresh?'Your frame is receiving Teams presence.':data.state==='signed_in'?'Signed in. Waiting for a fresh presence update…':'Waiting for the frame to connect to Microsoft…');
-    if(data.state==='code'&&data.expires_in>0){
-      code.textContent=data.user_code;deadline=Date.now()+data.expires_in*1000;login.hidden=false;
-      statusText.textContent='Your frame needs you to sign in.';
-    }
-    await loadSettings();
-    tick();
-  }catch(error){
-    clearCode();controlToken='';testDeadline=0;
-    ['activity','freshness','age','display','account','signal','disconnect','retries','next-retry','recovery-ap'].forEach(id=>el(id).textContent='Unavailable');
-    el('wifi-history').textContent='Unavailable';
-    el('connection').textContent='Cannot reach frame';
-    el('test-status').textContent='Cannot reach frame. Any active test expires automatically.';
-    statusText.textContent='Cannot reach the frame. Check that you are on the same Wi-Fi. Reconnecting…';
-  }
-  clearTimeout(timeout);enableTests();setTimeout(update,3000);
-}
-async function testLights(mode){
-  if(testBusy||!controlToken)return;
-  testBusy=true;enableTests();
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
-  try{
-    const response=await fetch('/api/led-test',{method:'POST',headers:{'Content-Type':'application/json','X-Frame-Token':controlToken},body:JSON.stringify({mode}),signal:controller.signal});
-    if(!response.ok)throw new Error('Rejected');
-    el('test-status').textContent=mode==='auto'?'Returning to Teams status…':'Test started. Normal status returns after ten seconds.';
-  }catch(error){el('test-status').textContent='Could not confirm the test. Any started test expires automatically.';}
-  clearTimeout(timeout);testBusy=false;enableTests();
-}
-async function loadSettings(){
- const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
- try{
-  const response=await fetch('/api/settings',{cache:'no-store',signal:controller.signal});
-  if(!response.ok)throw Error('Unavailable');
-  const data=await response.json();
-  const rebooted=settingsToken&&data.control_token!==settingsToken;
-  if(!settingsLoaded||rebooted){
-   settingFields.forEach(name=>el('setting-'+name).value=data[name]);
-   el('setting-password').value='';el('setting-open').checked=false;
-   clearFieldErrors();
-   el('settings-status').textContent=rebooted?'Frame reconnected. Current settings loaded.':'Settings loaded. Passwords are never displayed.';
-  }
-  if(settingsLoaded&&!settingsAvailable&&!rebooted)el('settings-status').textContent='Settings connection restored. Your edits are kept.';
-  settingsToken=data.control_token;
-  controlToken=data.control_token;
-  settingsLoaded=true;settingsAvailable=true;
-  if(restarting&&data.control_token!==restartToken)restarting=false;
-  if(data.restart_pending){restarting=true;restartToken=data.control_token;}
-  if(trialActive&&!data.trial&&!data.restart_pending&&!rebooted)el('settings-status').textContent='Wi-Fi trial completed. Settings confirmed.';
-  trialActive=Boolean(data.trial);
-  trialDeadline=trialActive?Date.now()+data.trial_seconds_remaining*1000:0;
-  if(restarting)showRestart();
-  tickTrial();
- }catch(error){settingsAvailable=false;if(!restarting)el('settings-status').textContent='Cannot load settings. Retrying…';}
- clearTimeout(timeout);
-}
-const fieldMessages={ssid:'Enter a Wi-Fi name of 1–32 bytes.',password:'Use 8–63 printable ASCII characters or 64 hexadecimal digits. Leave blank to keep the saved password.',open:'Choose whether to use an open network.',tenant:'Enter a valid tenant GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',client:'Enter a valid app client GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',ntp:'Enter a hostname or IPv4 address using letters, digits, dots and hyphens (up to 253 bytes).',poll_seconds:'Enter a whole number from 2 to 300.',stale_seconds:'Enter a whole number from 30 to 3600, greater than the poll interval.',brightness:'Enter a whole number from 1 to 100.'};
-function clearFieldErrors(){
- Object.keys(fieldMessages).forEach(name=>{el('error-'+name).hidden=true;el('setting-'+name).removeAttribute('aria-invalid');});
-}
-function showRestart(wifiTrial=false){
- el('settings-status').textContent='Restart pending'+(wifiTrial?' for a Wi-Fi connection trial':'')+'. Waiting for the frame to reconnect automatically. If its address changes, reconnect to its Wi-Fi and open the new address, or use setup Wi-Fi at http://192.168.4.1/.';
-}
-function tickTrial(){
- el('trial-status').hidden=el('trial-progress').hidden=!trialActive;
- if(!trialActive)return;
- const seconds=Math.max(0,Math.ceil((trialDeadline-Date.now())/1000));
- el('trial-progress').value=180-seconds;
- el('trial-status').textContent='Trying new Wi-Fi settings: '+seconds+' seconds remaining. Waiting for connection and storage confirmation; previous settings return if the trial fails.';
-}
-async function changeSettings(action){
- if(!controlToken||!settingsLoaded||!settingsAvailable||settingsBusy||restarting||trialActive)return;
- if(action==='reset_auth'&&!confirm('Clear Microsoft sign-in and restart the frame?'))return;
- const payload={action};
- if(action==='save'){
-  settingFields.forEach(name=>payload[name]=['poll_seconds','stale_seconds','brightness'].includes(name)?Number(el('setting-'+name).value):el('setting-'+name).value);
-  payload.password=el('setting-password').value;payload.open_network=el('setting-open').checked;
- }
- clearFieldErrors();
- settingsBusy=true;enableTests();
- const submittedToken=controlToken;
- const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
- try{
-  const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Frame-Token':controlToken},body:JSON.stringify(payload),signal:controller.signal});
-  if(!response.ok){
-   const data=await response.json().catch(()=>({}));
-   if(data.error==='validation'&&Object.hasOwn(fieldMessages,data.field)){
-    const input=el('setting-'+data.field),message=el('error-'+data.field);
-    message.textContent=fieldMessages[data.field];message.hidden=false;
-    input.setAttribute('aria-invalid','true');input.focus();
-    el('settings-status').textContent='Settings were not saved. Correct the highlighted field and try again.';
-   }else if(data.error==='storage'){
-    el('settings-status').textContent='Device storage failed. The change was not confirmed and no restart was scheduled. Try again.';
-   }else if(data.error==='restart_or_trial_pending'){
-    el('settings-status').textContent='A restart or Wi-Fi trial is already in progress. Waiting for updated status…';
-    await loadSettings();
-   }else if(response.status===403){
-    el('settings-status').textContent='The frame session changed. Refreshing its settings; try again once connected.';
-    await loadSettings();
-   }else{el('settings-status').textContent='The frame rejected the request. Try again once connected.';}
-  }else{
-   const data=await response.json();
-   const messages={unchanged:'No changes to save.',applied:'Saved. Brightness applied.',restart:'',wifi_trial:''};
-   if(!Object.hasOwn(messages,data.outcome))throw Error('Unknown save outcome');
-   el('setting-password').value='';
-   if(['restart','wifi_trial'].includes(data.outcome)){
-    restarting=true;restartToken=submittedToken;showRestart(data.outcome==='wifi_trial');
-   }else{el('settings-status').textContent=messages[data.outcome];}
-  }
- }catch(error){el('settings-status').textContent='Change not confirmed: connection lost. Reconnecting automatically to check the frame. Your entered settings are kept until a reboot is detected.';}
- clearTimeout(timeout);settingsBusy=false;enableTests();
-}
-el('settings-form').addEventListener('submit',event=>{event.preventDefault();changeSettings('save');});
-el('reset-auth').addEventListener('click',()=>changeSettings('reset_auth'));
-function tick(){
-  tickTrial();
-  if(!deadline)return;
-  const seconds=Math.max(0,Math.ceil((deadline-Date.now())/1000));
-  if(!seconds){clearCode();statusText.textContent='Code expired. Waiting for a new code…';return;}
-  expiry.textContent='Code expires in '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
-}
-buttons.forEach(button=>button.addEventListener('click',()=>testLights(button.dataset.mode)));
-setInterval(tick,1000);update();
-</script>
+<script src="/dashboard.js" defer></script>
+<script type="module" src="/firmware.js"></script>
 </html>

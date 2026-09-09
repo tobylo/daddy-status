@@ -51,6 +51,52 @@ pull-request builds on a real device. Losing the key requires USB reprovisioning
 key over the existing one. The default build has the dual-slot layout and
 rollback enabled but rejects all uploads until signed OTA is configured.
 
+## Updating from the frame dashboard
+
+Open the frame’s local address and find **Firmware update**. It shows the installed
+version and whether the frame is ready for an update. Default builds explain the
+required one-time USB provisioning instead of enabling installation.
+
+- **Local file:** choose a signed application `.bin` and click **Upload and install**.
+- **GitHub release:** click **Load releases**, select a version, review its release
+  notes, then click **Install selected release**. Stable releases are shown by
+  default; enable **Include prereleases** for test versions. **Load older releases**
+  retrieves another page when available.
+
+Confirm the chosen image, then keep the page open through transfer, restart and
+boot confirmation. The page reports upload progress separately from signature
+verification and the subsequent boot health check. A return to the previous slot
+is reported as an update that was not retained. Lost responses are reconciled by
+polling, never by automatically uploading again. If the outcome remains unknown
+after five minutes, check the frame and its installed version before retrying.
+Reloading/closing the page loses its in-progress outcome tracking; it does not
+cancel a device update that has already been accepted.
+
+The release picker selects only `daddy-status-<tag>-ota-frame.bin` assets that fit
+the device’s slot. Factory images and ELF files are excluded. This does not prove
+signing-key or hardware compatibility: custom and encrypted devices may require
+locally built images with their original profile and key. Device-side signature
+verification remains mandatory for both paths.
+
+### Release download transport
+
+The browser reads the public GitHub releases API without credentials. The tested
+GitHub binary redirect does not return browser CORS headers, so the frame proxies
+the selected asset through token-protected `POST /api/firmware/asset`. That endpoint
+accepts only a decimal asset ID in this repository, verifies HTTPS using the
+certificate bundle, and permits a single redirect to
+`https://release-assets.githubusercontent.com/`. It streams through a 4 KiB
+buffer, with slot-size and time limits, and releases its settings reservation on
+failure or completion. It does not write flash. The browser checks the downloaded
+length, then sends the binary to the existing signed upload endpoint.
+
+The frame needs internet access and a correct clock for the GitHub HTTPS download;
+the browser also needs access to the releases API. If GitHub is unavailable or
+rate-limited, local file upload remains available. The UI suspends its regular
+polling during transfers and disables settings changes and duplicate submissions.
+Firmware status is exposed at `GET /api/firmware`, including the version, active
+slot, maximum image size, readiness, boot confirmation and per-boot control token.
+
 ## Later wireless updates
 
 Build with the same profile, configuration, and signing key. On a computer on
