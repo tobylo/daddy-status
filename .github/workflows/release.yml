@@ -69,6 +69,7 @@ jobs:
           build="build-$PROFILE"
           args=(-B "$build" -D "SDKCONFIG=$build/sdkconfig" -D "SDKCONFIG_DEFAULTS=$defaults" -D "PROJECT_VER=$GITHUB_REF_NAME")
           idf.py "${args[@]}" build
+          grep -qx 'CONFIG_LED_DATA_GPIO=13' "$build/sdkconfig"
           mkdir -p release
           name="daddy-status-$GITHUB_REF_NAME-$PROFILE"
           cp "$build/daddy-status.elf" "release/$name.elf"
@@ -131,7 +132,7 @@ jobs:
             echo
             echo "| Asset | Profile | Signed | Use |"
             echo "| --- | --- | --- | --- |"
-            echo "| \`daddy-status-$TAG-factory.bin\` | default | no | USB install, no OTA, LED GPIO 25 |"
+            echo "| \`daddy-status-$TAG-factory.bin\` | default | no | USB install, no OTA, LED GPIO 13 |"
             echo "| \`daddy-status-$TAG-ota-frame-factory.bin\` | frame + ota | release key | USB install with signed OTA, LED GPIO 13 |"
             echo "| \`daddy-status-$TAG-ota-frame.bin\` | frame + ota | release key | OTA update for devices running an ota-frame image |"
             echo

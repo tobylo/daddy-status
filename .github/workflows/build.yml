@@ -44,6 +44,7 @@ jobs:
             idf.py merge-bin -f raw -o factory.bin
             test -s build/factory.bin
           fi
+          grep -qx 'CONFIG_LED_DATA_GPIO=13' sdkconfig
       - name: Host tests with sanitizers
         if: matrix.configuration == 'default'
         shell: bash

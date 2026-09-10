@@ -36,7 +36,7 @@ menu "Daddy Status"
         config LED_DATA_GPIO
             int "Data GPIO pin number"
             range 0 33
-            default 25
+            default 13
             help
                 GPIO number of data to LED array
     endmenu

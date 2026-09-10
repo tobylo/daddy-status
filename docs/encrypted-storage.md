@@ -33,7 +33,8 @@ idf.py -B build-encrypted -D SDKCONFIG=sdkconfig.encrypted.local \
   -D 'SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.frame;sdkconfig.ota;sdkconfig.encrypted' build
 ```
 
-Omit `sdkconfig.frame` for boards without its GPIO13 wiring. Configure the
+All default and frame profiles use GPIO13. Select a different LED data GPIO in
+menuconfig for other wiring. Configure the
 recovery password and network before provisioning. Confirm these generated
 settings before installation:
 
