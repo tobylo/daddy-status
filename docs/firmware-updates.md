@@ -39,8 +39,9 @@ idf.py -B build-ota -D SDKCONFIG=sdkconfig.ota.local \
 idf.py -B build-ota -D SDKCONFIG=sdkconfig.ota.local -p /dev/ttyUSB0 flash monitor
 ```
 
-Use the device's real port and omit `sdkconfig.frame` if its GPIO13 wiring is not
-appropriate. Configure Wi-Fi/recovery access in menuconfig. Verify `FRAME_OTA_ENABLE`,
+Use the device's real port. All default and frame profiles use GPIO13; explicitly
+select another LED data GPIO in menuconfig if your wiring differs. Configure
+Wi-Fi/recovery access in menuconfig. Verify `FRAME_OTA_ENABLE`,
 `SECURE_SIGNED_ON_UPDATE`, and `BOOTLOADER_APP_ROLLBACK_ENABLE` are enabled in the
 generated configuration. The profile uses IDF's ECDSA V1 signed-app scheme for
 classic ESP32 compatibility, without enabling hardware Secure Boot.
@@ -148,10 +149,14 @@ previously published binaries; a new tagged release is required.
 
 | Asset | Profile | Signed | Use |
 | --- | --- | --- | --- |
-| `daddy-status-<tag>-factory.bin` | `sdkconfig.defaults` | no | Merged image for USB or web flashing at `0x0`. No OTA endpoint; LED GPIO 25. |
+| `daddy-status-<tag>-factory.bin` | `sdkconfig.defaults` | no | Merged image for USB or web flashing at `0x0`. No OTA endpoint; LED GPIO 13. |
 | `daddy-status-<tag>-ota-frame-factory.bin` | frame + ota | release key | Merged image for USB or web flashing at `0x0`. Signed OTA and rollback; LED GPIO 13. |
 | `daddy-status-<tag>-ota-frame.bin` | frame + ota | release key | App image for the OTA page on a device running an `ota-frame` image. |
 | `signature_verification_key.bin`, `*.elf`, `SHA256SUMS` | | | Public key for `espsecure verify-signature`, backtrace symbols, checksums. |
+
+Plain `factory.bin` releases through v0.2.0 used GPIO25; their OTA/frame images
+already used GPIO13. Those published binaries are unchanged. Use a newer release
+or rebuild to get GPIO13 in the plain factory image as well.
 
 Merged factory images pad the gaps between bootloader, partition table, app and
 OTA data with `0xFF`, so flashing one **erases saved settings and Microsoft

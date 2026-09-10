@@ -139,7 +139,7 @@ int64_t esp_timer_get_time(void)
 esp_err_t led_strip_new_rmt_device(const led_strip_config_t *config,
                                    const led_strip_rmt_config_t *rmt, led_strip_handle_t *strip)
 {
-    assert(config->max_leds == STATUS_LED_COUNT && config->strip_gpio_num == 25);
+    assert(config->max_leds == STATUS_LED_COUNT && config->strip_gpio_num == 13);
     assert(rmt->resolution_hz == 10000000);
     if (fail_driver)
         return ESP_FAIL;

@@ -179,7 +179,8 @@ cached. Wi-Fi and Entra settings can be changed under Settings and recovery.
 ## Reproduce the tested picture frame
 
 `sdkconfig.frame` records GPIO13, brightness 100%, a 10-second presence interval,
-and a 60-second stale threshold. Generic defaults still support other wiring.
+and a 60-second stale threshold. The shared default and all published factory/OTA
+images use GPIO13. For other wiring, explicitly select the LED data GPIO in menuconfig.
 For a **fresh** local build, use:
 
 ```sh
